@@ -22,4 +22,3 @@
 과거 고속 v1 및 이전 대화의 웹앱 제안은 현재 운영 규칙으로 사용하지 않는다. 실제 통합 브리지의 승인/정합 여부는 `docs/bridge-alignment.md`를 확인한다.
 
 Ethos-Contents의 PROJECT_INSTRUCTIONS.md와 MANIFEST.md에서 작업별 최소 파일 조회와 Active 버전 구분 방식만 참고했다. 마케팅·콘텐츠 발행 규칙은 가져오지 않았다. Ethos의 START.md는 조회 시 없었으며 이 프로젝트에서 새로 작성했다.
-

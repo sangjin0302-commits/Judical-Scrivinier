@@ -12,4 +12,3 @@
 - 한글 강의 최종 문체는 humanize-korean으로 점검하되 법률용어·수치·인용·근거를 보존한다.
 - 성능 주장은 실제 측정과 조건을 함께 기록한다. 로컬 fixture 검사를 Google Sheets 계산 검증으로 표현하지 않는다.
 - 변경 후 `python tools/validate_package.py`를 실행하고 실패를 해결한다. 원본 자료를 수정해서 검사를 통과시키지 않는다.
-
