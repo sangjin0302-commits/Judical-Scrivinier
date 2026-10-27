@@ -2,6 +2,8 @@
 
 ChatGPT에서 핵심 개념 수업, 백지회상, 공식 문제풀이, 오답 보완을 이어가기 위한 자료 저장소입니다. 단기 민법을 주교재로, 로앤을 보충교재로 사용합니다.
 
+`오늘 민법 과외 시작`은 AI가 핵심 개념과 사례를 먼저 가르치는 수업입니다. 도입 복습은 1~2개 이내로 제한하고, 이해가 안 되면 질문 대신 설명을 바꿉니다. [교수법 정본](rules/teaching-method.md)과 [실제 응답 형태의 신의칙 시범](docs/teaching-demo.md)을 확인할 수 있습니다.
+
 ## 시작
 
 1. ChatGPT의 GitHub 연결에서 이 저장소를 읽을 수 있는지 확인합니다. Private 전환 후에는 접근 권한을 부여합니다. Drive/Sheets 연결도 별도로 유지합니다.
@@ -32,6 +34,7 @@ Draft PR 검토 중에는 PR의 작업 브랜치를 명시해서 읽습니다. �
 - [docs/slimming-plan.md](docs/slimming-plan.md): 원본에 적용하지 않은 경량화 제안
 - [docs/performance-baseline.md](docs/performance-baseline.md): 실제 측정 및 측정 불가 구분
 - [docs/delivery-report.md](docs/delivery-report.md): 결과·남은 작업
+- [docs/teaching-redesign.md](docs/teaching-redesign.md): 교수법 개편·기존 방식과 비교·233단원 적용 계획
 - [docs/ci-checks.md](docs/ci-checks.md): PR 자동 검사와 권한
 - [docs/package-validation.md](docs/package-validation.md): 확장 검사와 미검증 경고의 의미
 - [docs/open-source-review.md](docs/open-source-review.md): 추가 패키지 도입 판단

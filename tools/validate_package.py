@@ -18,7 +18,8 @@ REQUIRED = ["README.md", "START.md", "MANIFEST.md", "PROJECT_INSTRUCTIONS.md", "
  "docs/bridge-alignment.md", "docs/sync-design.md", "docs/speed-baseline.md",
  "docs/pilot-report.md", "docs/study-scenario.md", "docs/delivery-report.md",
  "sources/source-index.csv", "sources/textbook-mapping.csv", "curriculum/learning-path.md",
- "tools/identity-baseline.json"]
+ "tools/identity-baseline.json", "rules/teaching-method.md",
+ "docs/teaching-demo.md", "docs/teaching-redesign.md"]
 
 @dataclass
 class ValidationResult:

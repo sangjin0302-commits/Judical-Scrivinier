@@ -1,6 +1,6 @@
 # 적용 규칙 목록
 
-패키지 버전: 0.1.0-draft / 기준일: 2026-10-27.
+패키지 버전: 0.2.0-draft / 기준일: 2026-10-27.
 
 이 패키지는 기존 공식 운영을 교체하지 않는 짧은 읽기 경로와 학습자료다. 문서가 존재한다는 이유로 승인·실제 배포·시트 변경을 뜻하지 않는다.
 
@@ -15,10 +15,13 @@
 | rules/common.md, rules/data-safety.md | 패키지 0.1 | 모든 경로 |
 | rules/p1-ox.md, rules/p2-case.md | 패키지 0.1 | 해당 공식 출제·채점 |
 | rules/concept-recall.md, rules/curriculum.md | 패키지 0.1 | 개념 학습·회상 |
+| rules/teaching-method.md | 교수법 1.0 정본 | 기본 과외의 설명·사례·이해 확인·재강의 방식 |
 | rules/speed.md | 패키지 0.1 | 조회 경량화; 안전 절차 생략 금지 |
 | rules/source-update.md | 설계안 0.1 | 자동 반영 비활성 |
 | docs/slimming-plan.md, docs/sync-design.md | 검토안 | 원본 변경 실행 권한 없음 |
 
-과거 고속 v1 및 이전 대화의 웹앱 제안은 현재 운영 규칙으로 사용하지 않는다. 실제 통합 브리지의 승인/정합 여부는 `docs/bridge-alignment.md`를 확인한다.
+사용자의 이번 교수법 지시에 따라 기본 과외는 강의 중심으로 진행한다. 과거 문서의 복습 우선·질문 나열 흐름보다 교수법 정본을 적용하되, 원본 데이터·공식 출제·채점·기록 보호 규칙은 그대로 유지한다. 설명 지침을 다른 문서에 별도 정본으로 만들지 않는다.
+
+과거 고속 v1 및 이전 대화의 웹앱 제안은 현재 운영 규칙으로 사용하지 않는다. PB1은 [현행 계약 점검](docs/pb1-current-contract.md)의 안전 결함이 해결·검증되기 전까지 사용하지 않는다.
 
 Ethos-Contents의 PROJECT_INSTRUCTIONS.md와 MANIFEST.md에서 작업별 최소 파일 조회와 Active 버전 구분 방식만 참고했다. 마케팅·콘텐츠 발행 규칙은 가져오지 않았다. Ethos의 START.md는 조회 시 없었으며 이 프로젝트에서 새로 작성했다.
