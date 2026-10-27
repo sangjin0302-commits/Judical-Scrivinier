@@ -124,7 +124,13 @@ function PB1F_issue(payload) {
     var props = PropertiesService.getScriptProperties();
     var retrySetId = props.getProperty('PB1F_ISSUE_' + requestId);
     var ss = PB1F_ss_();
-    if (retrySetId) return PB1F_reloadSet_(ss, retrySetId, started, true);
+    if (retrySetId) {
+      try {
+        return PB1F_reloadSet_(ss, retrySetId, started, true);
+      } catch (retryError) {
+        props.deleteProperty('PB1F_ISSUE_' + requestId);
+      }
+    }
 
     var bridge = ss.getSheetByName(PB1F.BRIDGE);
     var settings = ss.getSheetByName(PB1F.SETTINGS);
@@ -143,6 +149,7 @@ function PB1F_issue(payload) {
     });
     var selected = PB1F_selectedRows_(bridge, picks);
     var setId = PB1F_setId_(ss, setSheet);
+    props.setProperty('PB1F_ISSUE_' + requestId, setId);
     var now = new Date();
     var rows = picks.map(function (pick, index) {
       return [setId, now, index + 1, pick.key, '아니오', '아니오', selected[index][8]];
@@ -161,7 +168,6 @@ function PB1F_issue(payload) {
     });
     setSheet.getRange(startRow, 5, rows.length, 1).setValue('예');
     SpreadsheetApp.flush();
-    props.setProperty('PB1F_ISSUE_' + requestId, setId);
     return PB1F_present_(setId, picks, selected, baseSeed, started, false);
   } finally {
     lock.releaseLock();
@@ -244,6 +250,7 @@ function PB1F_grade(payload) {
     var graded = keys.map(function (key, index) {
       var row = keyMap[key];
       if (!row) throw new Error('선택 채점키 없음: ' + key);
+      if (String(row[6]).trim() !== '정상') throw new Error('선택 채점키 상태 비정상: ' + key);
       var correct = PB1F_normalizeAnswer_(row[1]);
       return { key: key, no: index + 1, answer: answers[index], correct: correct,
         score: answers[index] === correct ? 1 : 0, source: row[4], sourceTime: row[5] || indexed[index].row[6] };

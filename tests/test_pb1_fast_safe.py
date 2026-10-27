@@ -1,6 +1,7 @@
 """Synthetic PB1 v2 contract tests. No Google service, sheet, or key store access."""
 import threading
 import unittest
+from pathlib import Path
 
 
 class FakeStore:
@@ -46,6 +47,11 @@ class FakeStore:
 
 
 class PB1FastSafeTests(unittest.TestCase):
+    def test_source_blocks_operational_original(self):
+        source = (Path(__file__).parents[1] / "apps-script/pb1-fast-safe/PB1FastSafe.gs").read_text(encoding="utf-8")
+        self.assertIn("if (id === PB1F.ORIGINAL_ID)", source)
+        self.assertIn("운영 원본 실행 차단", source)
+
     def test_bridge_display_order_is_preserved_across_scopes(self):
         store = FakeStore()
         self.assertEqual(store.issue("r1", [["T3", "T1", "T2"], ["P7", "P4"]]),
