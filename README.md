@@ -32,5 +32,11 @@ Draft PR 검토 중에는 PR의 작업 브랜치를 명시해서 읽습니다. �
 - [docs/slimming-plan.md](docs/slimming-plan.md): 원본에 적용하지 않은 경량화 제안
 - [docs/performance-baseline.md](docs/performance-baseline.md): 실제 측정 및 측정 불가 구분
 - [docs/delivery-report.md](docs/delivery-report.md): 결과·남은 작업
+- [docs/ci-checks.md](docs/ci-checks.md): PR 자동 검사와 권한
+- [docs/package-validation.md](docs/package-validation.md): 확장 검사와 미검증 경고의 의미
+- [docs/open-source-review.md](docs/open-source-review.md): 추가 패키지 도입 판단
+- [docs/live-pilot-readiness.md](docs/live-pilot-readiness.md): 최신 진도와 시범 수업 대상
+- [docs/pb1-current-contract.md](docs/pb1-current-contract.md): PB1 현행 코드 점검·실행 보류 사유
+- [docs/performance-followup.md](docs/performance-followup.md): GitHub·Sheets 개별 조회 측정
 
 교재 전체, 공식 문제 지문과 정답, 개인 원답·풀이이력은 저장하지 않습니다. 비공개 저장소도 이 제한을 해제하지 않습니다. 이번 초기 게시에 한해 사용자가 Public 상태 게시를 명시 허용했으며, 완성 후 직접 Private으로 전환할 예정입니다.

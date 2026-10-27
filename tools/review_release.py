@@ -11,7 +11,7 @@ findings = []
 for path in files:
     if path.suffix.lower() in {'.pdf', '.xlsx', '.xls', '.zip'}:
         findings.append(str(path.relative_to(root)))
-    if path.suffix.lower() not in {'.md', '.txt', '.csv', '.py'}:
+    if path.suffix.lower() not in {'.md', '.txt', '.csv', '.py', '.json', '.yml', '.yaml'}:
         continue
     text = path.read_text(encoding='utf-8-sig')
     # Report paths only; never echo a possible credential.
