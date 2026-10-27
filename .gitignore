@@ -1,0 +1,15 @@
+_workspace/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.pdf
+*.xlsx
+*.xls
+*.zip
+private/
+tmp/
+raw/
+credentials*.json
+token*.json
+
