@@ -19,7 +19,9 @@ REQUIRED = ["README.md", "START.md", "MANIFEST.md", "PROJECT_INSTRUCTIONS.md", "
  "docs/pilot-report.md", "docs/study-scenario.md", "docs/delivery-report.md",
  "sources/source-index.csv", "sources/textbook-mapping.csv", "curriculum/learning-path.md",
  "tools/identity-baseline.json", "rules/teaching-method.md",
- "docs/teaching-demo.md", "docs/teaching-redesign.md"]
+ "docs/teaching-demo.md", "docs/teaching-redesign.md",
+ "rules/compression-curriculum.md", "rules/mastery-gate.md", "curriculum/issue-map.csv",
+ "docs/exam-demand-evidence.md", "docs/compression-pilot-plan.md", "docs/compression-report.md"]
 
 @dataclass
 class ValidationResult:
@@ -149,6 +151,46 @@ def validate(root=ROOT):
         source_status = row.get("source_verification", "").strip()
         if source_status not in {"검증완료", "원문대조완료"}:
             result.warnings.append(f"source verification incomplete: {key}: {source_status or 'missing status'}")
+    issues = rows("curriculum/issue-map.csv")
+    issue_columns = {"unit_id", "issue_id", "issue_name", "learning_tier", "classification_basis",
+                     "p1_requirement", "p2_requirement", "prerequisites", "dangi_source", "loan_source",
+                     "official_problem_keys", "verification_status", "deferred_trigger", "evidence_refs"}
+    check(bool(issues) and issue_columns <= set(issues[0]), "issue map required columns")
+    check({r.get("unit_id") for r in issues} == ids, "issue map covers existing unit IDs including unclassified")
+    issue_ids = {r.get("issue_id", "") for r in issues}
+    check(len(issue_ids) == len(issues) and "" not in issue_ids, "issue identities unique and nonempty")
+    classified_units, unclassified_units = set(), set()
+    for row in issues:
+        unit, issue = row.get("unit_id", ""), row.get("issue_id", "")
+        tier = row.get("learning_tier", "")
+        check(unit in ids, f"issue unit exists: {issue}")
+        check(tier in {"A", "B", "C", ""}, f"issue learning tier: {issue}")
+        check(bool(row.get("verification_status", "").strip()), f"issue verification status: {issue}")
+        if not tier:
+            unclassified_units.add(unit)
+            check("미분류" in row.get("verification_status", ""), f"unclassified status explicit: {issue}")
+            check(not row.get("official_problem_keys", "").strip(), f"unclassified has no claimed official link: {issue}")
+            continue
+        classified_units.add(unit)
+        for column in ("issue_name", "classification_basis", "dangi_source", "evidence_refs"):
+            check(bool(row.get(column, "").strip()), f"classified issue evidence: {issue}:{column}")
+        check(bool(row.get("p1_requirement", "").strip()) and bool(row.get("p2_requirement", "").strip()),
+              f"both exam uses or explicit limitations: {issue}")
+        if tier in {"B", "C"}:
+            check(bool(row.get("deferred_trigger", "").strip()), f"deferred issue has promotion trigger: {issue}")
+        for prerequisite in filter(None, (s.strip() for s in row.get("prerequisites", "").split(";"))):
+            check(prerequisite in ids or prerequisite in issue_ids, f"known issue prerequisite: {issue}:{prerequisite}")
+        for reference in filter(None, (s.strip() for s in row.get("evidence_refs", "").split(";"))):
+            check(safe_file(reference.split("#", 1)[0]), f"issue local evidence exists: {issue}:{reference}")
+        for key in filter(None, (s.strip() for s in row.get("official_problem_keys", "").split(";"))):
+            check(key in current_keys, f"issue official key registered in mapping: {issue}:{key}")
+    for unit in sorted(classified_units):
+        check(any(r.get("unit_id") == unit and r.get("learning_tier") == "A" for r in issues),
+              f"classified unit retains core issues: {unit}")
+    check({p.stem for p in lessons} <= classified_units, "prepared lessons have classified issue maps")
+    if unclassified_units:
+        result.warnings.append(f"issue map unclassified units: {len(unclassified_units)}; not omitted from curriculum")
+    result.warnings.append("issue map tiers are evidence-linked teaching decisions, not verified frequency or mastery")
     sources = rows("sources/source-index.csv")
     source_ids = {r.get("source_id", "") for r in sources}
     check(len(sources) == len(source_ids) and "" not in source_ids, "source metadata identities unique and nonempty")

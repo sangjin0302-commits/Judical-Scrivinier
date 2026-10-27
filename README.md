@@ -2,6 +2,8 @@
 
 ChatGPT에서 핵심 개념 수업, 백지회상, 공식 문제풀이, 오답 보완을 이어가기 위한 자료 저장소입니다. 단기 민법을 주교재로, 로앤을 보충교재로 사용합니다.
 
+학습내용은 시험 요구·교재·선수관계로 선정합니다. 현재 7단원의 32논점을 A/B/C로 구분했고 나머지 233단원은 미분류입니다. 기본서를 얼마나 적게 보여줬는지가 아니라, 필요한 실력을 갖추는 총시간을 줄였는지 실제 수업에서 검증합니다. [압축 교육과정 결과](docs/compression-report.md)와 [논점 지도](curriculum/issue-map.csv)를 참고하세요.
+
 `오늘 민법 과외 시작`은 AI가 핵심 개념과 사례를 먼저 가르치는 수업입니다. 도입 복습은 1~2개 이내로 제한하고, 이해가 안 되면 질문 대신 설명을 바꿉니다. [교수법 정본](rules/teaching-method.md)과 [실제 응답 형태의 신의칙 시범](docs/teaching-demo.md)을 확인할 수 있습니다.
 
 ## 시작
@@ -35,6 +37,8 @@ Draft PR 검토 중에는 PR의 작업 브랜치를 명시해서 읽습니다. �
 - [docs/performance-baseline.md](docs/performance-baseline.md): 실제 측정 및 측정 불가 구분
 - [docs/delivery-report.md](docs/delivery-report.md): 결과·남은 작업
 - [docs/teaching-redesign.md](docs/teaching-redesign.md): 교수법 개편·기존 방식과 비교·233단원 적용 계획
+- [docs/compression-pilot-plan.md](docs/compression-pilot-plan.md): 총 학습시간·문제 해결·지연 기억 비교안
+- [docs/exam-demand-evidence.md](docs/exam-demand-evidence.md): 실제 문제 요구 관찰과 교육설계 판단의 구분
 - [docs/ci-checks.md](docs/ci-checks.md): PR 자동 검사와 권한
 - [docs/package-validation.md](docs/package-validation.md): 확장 검사와 미검증 경고의 의미
 - [docs/open-source-review.md](docs/open-source-review.md): 추가 패키지 도입 판단

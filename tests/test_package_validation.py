@@ -53,6 +53,7 @@ class PackageValidationTests(unittest.TestCase):
 
     def test_eleven_lessons_allowed(self):
         rows = self.read_csv("curriculum/units-index.csv")
+        issues = self.read_csv("curriculum/issue-map.csv")
         prepared = sum(bool(r["lesson_path"]) for r in rows)
         for row in rows:
             if prepared >= 11:
@@ -66,11 +67,55 @@ class PackageValidationTests(unittest.TestCase):
                 f"# {key}\nSynthetic validation fixture only. PDF {row['dangi_pdf_start']}\n"
                 f"Review 2026-10-28. Source: {row['dangi_pdf_url']}\n", encoding="utf-8")
             (self.root / row["recall_path"]).write_text(f"# {key}\nSynthetic question fixture only.\n", encoding="utf-8")
+            target = next(r for r in issues if r["unit_id"] == key)
+            target.update(learning_tier="A", issue_name="Synthetic core", classification_basis="Synthetic prerequisite",
+                          dangi_source="Synthetic PDF source", p1_requirement="Synthetic distinction",
+                          p2_requirement="Synthetic application", verification_status="Synthetic fixture only",
+                          evidence_refs=row["lesson_path"])
             prepared += 1
         self.write_csv("curriculum/units-index.csv", rows)
+        self.write_csv("curriculum/issue-map.csv", issues)
         result = validate(self.root)
         self.assertTrue(result.ok, result.errors)
         self.assertGreaterEqual(len(list((self.root / "lessons").glob("*.md"))), 11)
+
+    def test_issue_unknown_unit_rejected(self):
+        rows = self.read_csv("curriculum/issue-map.csv")
+        rows[0]["unit_id"] = "B9-P0001-0002"
+        self.write_csv("curriculum/issue-map.csv", rows)
+        self.assert_failure("issue unit exists")
+
+    def test_deferred_issue_requires_promotion_condition(self):
+        rows = self.read_csv("curriculum/issue-map.csv")
+        row = next(r for r in rows if r["learning_tier"] in {"B", "C"})
+        row["deferred_trigger"] = ""
+        self.write_csv("curriculum/issue-map.csv", rows)
+        self.assert_failure("deferred issue has promotion trigger")
+
+    def test_issue_cannot_claim_unknown_official_key(self):
+        rows = self.read_csv("curriculum/issue-map.csv")
+        rows[0]["official_problem_keys"] = "SRC-CIV-TEST|INVENTED"
+        self.write_csv("curriculum/issue-map.csv", rows)
+        self.assert_failure("issue official key registered in mapping")
+
+    def test_issue_cannot_hide_missing_evidence_as_core(self):
+        rows = self.read_csv("curriculum/issue-map.csv")
+        row = next(r for r in rows if not r["learning_tier"])
+        row.update(learning_tier="A", classification_basis="", evidence_refs="")
+        self.write_csv("curriculum/issue-map.csv", rows)
+        self.assert_failure("classified issue evidence")
+
+    def test_issue_evidence_path_escape_rejected(self):
+        rows = self.read_csv("curriculum/issue-map.csv")
+        rows[0]["evidence_refs"] = "../outside.md"
+        self.write_csv("curriculum/issue-map.csv", rows)
+        self.assert_failure("issue local evidence exists")
+
+    def test_issue_unknown_tier_rejected(self):
+        rows = self.read_csv("curriculum/issue-map.csv")
+        rows[0]["learning_tier"] = "SKIP"
+        self.write_csv("curriculum/issue-map.csv", rows)
+        self.assert_failure("issue learning tier")
 
     def test_new_mapping_allowed_but_unverified_warned(self):
         rows = self.read_csv("mapping/concept-problem-proposals.csv")
