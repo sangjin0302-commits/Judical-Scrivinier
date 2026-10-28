@@ -3,9 +3,10 @@ import { z } from "zod";
 
 import { authConfig, createWorkOSVerifier } from "../../auth.mjs";
 import { callTool } from "../../server.mjs";
+import { verifyGoogleDocsParity } from "../../db/verify-google-docs-parity-readonly.mjs";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const config = authConfig();
 const oauthSecurity = [{ type: "oauth2", scopes: config.requiredScopes }];
@@ -137,6 +138,22 @@ const baseHandler = createMcpHandler(
           evidence: z.record(z.string(), z.unknown()).optional() }),
         annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
       async (input, ctx) => callTool("submitCivilRecall", input, { ownerId: ownerIdFromContext(ctx) }),
+    );
+
+    server.registerTool(
+      "verifyCivilDocsParity",
+      { title: "민법 Docs·PostgreSQL 읽기 전용 대조",
+        description: "기존 Google Docs와 테스트 PostgreSQL의 안정키·문제 본문 digest 건수만 읽기 전용으로 대조합니다. 본문과 비공개 채점기준은 반환하지 않습니다.",
+        inputSchema: z.object({}),
+        annotations: readAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async () => {
+        try {
+          const result = await verifyGoogleDocsParity();
+          return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false };
+        } catch {
+          return { content: [{ type: "text", text: "Docs parity verification failed" }], isError: true };
+        }
+      },
     );
   },
   {
