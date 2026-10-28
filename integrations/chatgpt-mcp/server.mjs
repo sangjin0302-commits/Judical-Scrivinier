@@ -5,6 +5,8 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { createPostgresExecutor } from "./db/postgres-adapter.mjs";
+import { createConceptExecutor } from "./db/concept-service.mjs";
+import { CONCEPT_TOOLS, validateConceptToolInput } from "./concept-tools.mjs";
 
 const TOOLS = [
   {
@@ -69,6 +71,7 @@ const TOOLS = [
     }, additionalProperties: false }
   }
 ];
+TOOLS.push(...CONCEPT_TOOLS);
 
 function requiredEnv(name, env = process.env) {
   const value = String(env[name] || "").trim();
@@ -77,6 +80,8 @@ function requiredEnv(name, env = process.env) {
 }
 
 export function validateToolInput(name, input = {}) {
+  const conceptInput = validateConceptToolInput(name, input);
+  if (conceptInput) return conceptInput;
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("입력은 객체여야 합니다.");
   if (name === "issueCivilP1") {
     const unknown = Object.keys(input).filter((key) => key !== "requestId");
@@ -190,10 +195,15 @@ const functions = {
   prepareCivilP2Grade: "P2F_prepareGrade", commitCivilP2Grade: "P2F_commitGrade"
 };
 let postgresExecutor;
+let conceptExecutor;
 
 async function executeConfigured(name, payload, context = {}) {
   const backend = String(process.env.MCP_DATA_BACKEND || "apps-script").trim();
   if (backend === "postgres") {
+    if (CONCEPT_TOOLS.some((tool) => tool.name === name)) {
+      conceptExecutor ||= createConceptExecutor();
+      return conceptExecutor(name, payload, context);
+    }
     postgresExecutor ||= createPostgresExecutor();
     return postgresExecutor(name, payload, context);
   }

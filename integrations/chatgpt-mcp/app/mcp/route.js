@@ -14,6 +14,11 @@ const writeAnnotations = {
   destructiveHint: false,
   openWorldHint: false,
 };
+const readAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+};
 const ownerIdFromContext = (ctx) => ctx?.http?.authInfo?.extra?.userId;
 
 const baseHandler = createMcpHandler(
@@ -97,6 +102,41 @@ const baseHandler = createMcpHandler(
       async (input, ctx) => callTool("commitCivilP2Grade", input, {
         ownerId: ownerIdFromContext(ctx),
       }),
+    );
+
+    server.registerTool(
+      "getCivilConceptUnit",
+      { title: "민법 개념 단원 조회", description: "1층·2층 강의, 회상 질문, A/B/C 논점과 승인된 문제 연결을 조회합니다.",
+        inputSchema: z.object({ unitId: z.string().min(1).max(100),
+          mode: z.enum(["INTEGRATED", "CONCEPT_ONLY", "PROBLEM_ONLY"]).optional() }),
+        annotations: readAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input, ctx) => callTool("getCivilConceptUnit", input, { ownerId: ownerIdFromContext(ctx) }),
+    );
+
+    server.registerTool(
+      "setCivilStudyMode",
+      { title: "민법 학습 모드 설정", description: "통합 과외·개념 전용·문제 전용 모드를 사용자별로 설정합니다.",
+        inputSchema: z.object({ mode: z.enum(["INTEGRATED", "CONCEPT_ONLY", "PROBLEM_ONLY"]) }),
+        annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input, ctx) => callTool("setCivilStudyMode", input, { ownerId: ownerIdFromContext(ctx) }),
+    );
+
+    server.registerTool(
+      "getCivilDueReviews",
+      { title: "민법 복습 예정 조회", description: "실제 회상 이력과 활성 복습 규칙에 따른 복습 질문을 조회합니다.",
+        inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }),
+        annotations: readAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input, ctx) => callTool("getCivilDueReviews", input, { ownerId: ownerIdFromContext(ctx) }),
+    );
+
+    server.registerTool(
+      "submitCivilRecall",
+      { title: "민법 백지복습 기록", description: "실제 원답과 기억함·부분기억·재학습 평가를 변경 불가 이력으로 기록합니다.",
+        inputSchema: z.object({ requestId: z.string().min(1).max(200), questionId: z.string().min(1).max(150),
+          answerText: z.string().min(1).max(50000), memoryResult: z.enum(["REMEMBERED", "PARTIAL", "RELEARN"]),
+          evidence: z.record(z.string(), z.unknown()).optional() }),
+        annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input, ctx) => callTool("submitCivilRecall", input, { ownerId: ownerIdFromContext(ctx) }),
     );
   },
   {

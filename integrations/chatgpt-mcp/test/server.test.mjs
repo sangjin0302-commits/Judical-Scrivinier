@@ -71,11 +71,24 @@ test("P2 answer submission rejects empty text before Apps Script", () => {
   }), /원답/);
 });
 
-test("server exposes the approved P1 and staged P2 tools", async () => {
+test("server exposes approved exam and concept tools", async () => {
   const response = await handleRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   assert.deepEqual(response.result.tools.map((tool) => tool.name), [
-    "issueCivilP1", "gradeCivilP1", "issueCivilP2", "prepareCivilP2Grade", "commitCivilP2Grade"
+    "issueCivilP1", "gradeCivilP1", "issueCivilP2", "prepareCivilP2Grade", "commitCivilP2Grade",
+    "getCivilConceptUnit", "setCivilStudyMode", "getCivilDueReviews", "submitCivilRecall"
   ]);
+});
+
+test("concept tools preserve authenticated owner and normalized input", async () => {
+  let called;
+  const result = await callTool("getCivilConceptUnit", { unitId: " B1-P0008-0011 ", mode: "CONCEPT_ONLY" }, {
+    ownerId: "user_workos_1",
+    executor: async (...args) => { called = args; return { ok: true, unit: { unit_id: "B1-P0008-0011" } }; },
+  });
+  assert.equal(called[0], "getCivilConceptUnit");
+  assert.deepEqual(called[1], { unitId: "B1-P0008-0011", mode: "CONCEPT_ONLY" });
+  assert.deepEqual(called[2], { ownerId: "user_workos_1" });
+  assert.equal(result.structuredContent.unit.unit_id, "B1-P0008-0011");
 });
 
 test("PostgreSQL executor receives the authenticated owner and canonical tool name", async () => {

@@ -81,10 +81,13 @@ async function setItems(client, setId) {
   const result = await client.query(
     `SELECT i.position, i.stable_key, i.key_version AS grading_key_version,
             i.encryption_key_id AS grading_encryption_key_id,
-            p.prompt_text, p.max_points, p.source_version,
-            p.selection_metadata
+            COALESCE(v.prompt_text,p.prompt_text) AS prompt_text,
+            COALESCE(v.max_points,p.max_points) AS max_points,
+            COALESCE(v.source_version,p.source_version) AS source_version,
+            COALESCE(v.selection_metadata,p.selection_metadata) AS selection_metadata
        FROM issue_set_items i JOIN problems p
          ON p.subject_id=i.subject_id AND p.stable_key=i.stable_key
+       LEFT JOIN problem_versions v ON v.version_id=i.problem_version_id
       WHERE i.set_id=$1 ORDER BY i.position`, [setId]);
   return result.rows;
 }
