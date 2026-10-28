@@ -182,8 +182,9 @@ export async function importCurriculum(client, snapshot) {
 }
 
 async function main() {
-  const root = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
-  const connectionString = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL;
+  const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
+  // CLI runs outside Railway private DNS; prefer the encrypted public proxy when present.
+  const connectionString = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required");
   const snapshot = await buildCurriculumSnapshot(root);
   const pool = new pg.Pool(postgresConnectionOptions(connectionString, { max: 1 }));
