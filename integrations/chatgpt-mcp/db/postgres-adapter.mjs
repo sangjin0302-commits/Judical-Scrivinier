@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import pg from "pg";
+import { postgresConnectionOptions } from "./pg-connection.mjs";
 
 const SUBJECT = "CIVIL";
 const stableValue = (value) => {
@@ -25,23 +26,29 @@ export function gradingKey(env = process.env) {
   return key;
 }
 
-export function decryptGradingPayload(encrypted, key) {
+export function gradingAad(subjectId, stableKey, keyVersion, encryptionKeyId) {
+  return Buffer.from(JSON.stringify({ subjectId, stableKey, keyVersion, encryptionKeyId }), "utf8");
+}
+
+export function decryptGradingPayload(encrypted, key, aad, expectedDigest) {
   const bytes = Buffer.from(encrypted);
   if (bytes.length < 29) throw new Error("encrypted grading payload is invalid");
+  if (!Buffer.isBuffer(aad) || !aad.length) throw new Error("grading payload AAD is required");
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
+  decipher.setAAD(aad);
   decipher.setAuthTag(bytes.subarray(12, 28));
-  return JSON.parse(Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8"));
+  const plaintext = Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
+  if (!expectedDigest || digest(plaintext) !== expectedDigest) throw new Error("grading payload digest mismatch");
+  return JSON.parse(plaintext);
 }
 
 export function createPostgresPool(env = process.env) {
   const connectionString = required(env.DATABASE_URL || env.DATABASE_PUBLIC_URL, "DATABASE_URL");
-  return new pg.Pool({
-    connectionString,
+  return new pg.Pool(postgresConnectionOptions(connectionString, {
     max: Math.max(1, Math.min(Number(env.PGPOOL_MAX || 2), 4)),
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 10_000,
-    ssl: env.PGSSL === "disable" ? false : { rejectUnauthorized: true },
-  });
+  }));
 }
 
 async function inTransaction(pool, operation) {
@@ -72,7 +79,9 @@ async function ownedSet(client, setId, ownerId, stage) {
 
 async function setItems(client, setId) {
   const result = await client.query(
-    `SELECT i.position, i.stable_key, p.prompt_text, p.max_points, p.source_version,
+    `SELECT i.position, i.stable_key, i.key_version AS grading_key_version,
+            i.encryption_key_id AS grading_encryption_key_id,
+            p.prompt_text, p.max_points, p.source_version,
             p.selection_metadata
        FROM issue_set_items i JOIN problems p
          ON p.subject_id=i.subject_id AND p.stable_key=i.stable_key
@@ -80,7 +89,7 @@ async function setItems(client, setId) {
   return result.rows;
 }
 
-async function issue(pool, ownerId, stage, input) {
+async function issue(pool, ownerId, stage, input, configuredKeyId) {
   const count = stage === "P1" ? 10 : input.caseCount;
   const request = { requestId: input.requestId, count, mode: input.mode || "전범위", keyword: input.keyword || "" };
   const requestDigest = digest(request);
@@ -97,14 +106,15 @@ async function issue(pool, ownerId, stage, input) {
     }
     const keyword = String(input.keyword || "").trim();
     const candidates = await client.query(
-      `SELECT p.stable_key, p.prompt_text, p.max_points, p.source_version, p.selection_metadata
-         FROM problems p
+      `SELECT p.stable_key, p.prompt_text, p.max_points, p.source_version, p.selection_metadata,
+              k.key_version AS grading_key_version, k.encryption_key_id AS grading_encryption_key_id
+         FROM problems p JOIN private_grading_keys k
+           ON k.subject_id=p.subject_id AND k.stable_key=p.stable_key
         WHERE p.subject_id=$1 AND p.stage=$2 AND p.published=true
-          AND EXISTS (SELECT 1 FROM private_grading_keys k
-                      WHERE k.subject_id=p.subject_id AND k.stable_key=p.stable_key
-                        AND k.verification_state='verified' AND k.active_for_grading=true)
+          AND k.verification_state='verified' AND k.active_for_grading=true
+          AND k.encryption_key_id=$5
           AND ($3='' OR p.prompt_text ILIKE '%' || $3 || '%' OR p.selection_metadata::text ILIKE '%' || $3 || '%')
-        ORDER BY md5(p.stable_key || $4) LIMIT $5`, [SUBJECT, stage, keyword, input.requestId, count]);
+        ORDER BY md5(p.stable_key || $4) LIMIT $6`, [SUBJECT, stage, keyword, input.requestId, configuredKeyId, count]);
     if (candidates.rowCount !== count) throw new Error(`not enough published ${stage} problems`);
     const setId = `${stage}-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
     await client.query(
@@ -112,8 +122,10 @@ async function issue(pool, ownerId, stage, input) {
        VALUES($1,$2,$3,$4,$5,$6)`, [setId, ownerId, SUBJECT, stage, input.requestId, requestDigest]);
     for (let index = 0; index < candidates.rows.length; index++) {
       await client.query(
-        `INSERT INTO issue_set_items(set_id,subject_id,position,stable_key) VALUES($1,$2,$3,$4)`,
-        [setId, SUBJECT, index + 1, candidates.rows[index].stable_key]);
+        `INSERT INTO issue_set_items(set_id,subject_id,position,stable_key,key_version,encryption_key_id)
+         VALUES($1,$2,$3,$4,$5,$6)`,
+        [setId, SUBJECT, index + 1, candidates.rows[index].stable_key,
+          candidates.rows[index].grading_key_version, candidates.rows[index].grading_encryption_key_id]);
     }
     await client.query(
       `INSERT INTO audit_events(actor_id,subject_id,action,aggregate_type,aggregate_id,request_id,payload_digest)
@@ -127,22 +139,28 @@ function publicProblem(row, index) {
     ...(row.max_points == null ? {} : { maxPoints: Number(row.max_points) }) };
 }
 
-async function latestKeys(client, items) {
+async function latestKeys(client, items, configuredKeyId) {
   const result = new Map();
   for (const item of items) {
+    const snapshotted = Boolean(item.grading_key_version && item.grading_encryption_key_id);
+    const keyVersion = item.grading_key_version || item.source_version;
+    const encryptionKeyId = item.grading_encryption_key_id || configuredKeyId;
+    if (encryptionKeyId !== configuredKeyId) throw new Error("set grading key is not available in this deployment");
     const key = await client.query(
-      `SELECT key_version, encryption_key_id, encrypted_payload FROM private_grading_keys
+      `SELECT key_version, encryption_key_id, encrypted_payload, payload_digest FROM private_grading_keys
        WHERE subject_id=$1 AND stable_key=$2
-         AND verification_state='verified' AND active_for_grading=true
-       ORDER BY (key_version=$3) DESC, created_at DESC LIMIT 1`,
-      [SUBJECT, item.stable_key, item.source_version]);
+         AND verification_state='verified'
+         AND encryption_key_id=$3 AND key_version=$4
+         AND ($5::boolean=false OR active_for_grading=true)
+       LIMIT 1`,
+      [SUBJECT, item.stable_key, encryptionKeyId, keyVersion, !snapshotted]);
     if (key.rowCount !== 1) throw new Error(`grading key missing: ${item.stable_key}`);
     result.set(item.stable_key, key.rows[0]);
   }
   return result;
 }
 
-async function gradeP1(pool, ownerId, input, key) {
+async function gradeP1(pool, ownerId, input, key, keyId) {
   const answerDigest = digest(input.answers);
   return inTransaction(pool, async (client) => {
     await ownedSet(client, input.setId, ownerId, "P1");
@@ -167,18 +185,20 @@ async function gradeP1(pool, ownerId, input, key) {
         `INSERT INTO original_answers(submission_id,subject_id,stable_key,answer_text,answer_digest)
          VALUES($1,$2,$3,$4,$5)`, [submissionId, SUBJECT, items[index].stable_key, input.answers[index], digest(input.answers[index])]);
     }
-    const keys = await latestKeys(client, items);
+    const keys = await latestKeys(client, items, keyId);
     const results = [];
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
       const keyRow = keys.get(item.stable_key);
-      const payload = decryptGradingPayload(keyRow.encrypted_payload, key);
+      const payload = decryptGradingPayload(keyRow.encrypted_payload, key,
+        gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
       const expected = String(payload.answer || "").trim().toUpperCase();
       if (!['O', 'X'].includes(expected)) throw new Error(`invalid P1 grading key: ${item.stable_key}`);
       const correct = input.answers[index] === expected;
       await client.query(
-        `INSERT INTO p1_grades(submission_id,subject_id,stable_key,is_correct,key_version)
-         VALUES($1,$2,$3,$4,$5)`, [submissionId, SUBJECT, item.stable_key, correct, keyRow.key_version]);
+        `INSERT INTO p1_grades(submission_id,subject_id,stable_key,is_correct,key_version,encryption_key_id)
+         VALUES($1,$2,$3,$4,$5,$6)`,
+        [submissionId, SUBJECT, item.stable_key, correct, keyRow.key_version, keyRow.encryption_key_id]);
       await client.query(
         `INSERT INTO learning_events(owner_id,subject_id,stable_key,event_type,payload)
          VALUES($1,$2,$3,'P1_GRADED',$4)`, [ownerId, SUBJECT, item.stable_key, JSON.stringify({ correct })]);
@@ -191,7 +211,7 @@ async function gradeP1(pool, ownerId, input, key) {
   });
 }
 
-async function prepareP2(pool, ownerId, input, encryptionKey) {
+async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
   const normalized = [...input.answers].sort((a, b) => a.key.localeCompare(b.key));
   const answerDigest = digest(normalized);
   const prepared = await inTransaction(pool, async (client) => {
@@ -222,10 +242,12 @@ async function prepareP2(pool, ownerId, input, encryptionKey) {
   });
   const client = await pool.connect();
   try {
-    const keys = await latestKeys(client, prepared.items);
+    const keys = await latestKeys(client, prepared.items, keyId);
     return { ok: true, replayed: prepared.replayed, setId: input.setId,
       rubrics: prepared.items.map((item) => {
-        const payload = decryptGradingPayload(keys.get(item.stable_key).encrypted_payload, encryptionKey);
+        const keyRow = keys.get(item.stable_key);
+        const payload = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
+          gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
         return { key: item.stable_key, maxPoints: Number(item.max_points), rubric: payload.rubric,
           rationale: payload.rationale, source: payload.source };
       }) };
@@ -257,12 +279,13 @@ async function commitP2(pool, ownerId, input) {
       await client.query(
         `INSERT INTO p2_grades(submission_id,subject_id,stable_key,awarded_points,max_points,
           issue_score,outline_score,law_score,precedent_score,application_score,conclusion_score,expression_score,
-          error_type,check_type,next_review_type,evaluation_payload,evaluation_digest)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          error_type,check_type,next_review_type,evaluation_payload,evaluation_digest,key_version,encryption_key_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
         [row.submission_id, SUBJECT, evaluation.key, evaluation.awardedPoints, evaluation.maxPoints,
           evaluation.scores.issue, evaluation.scores.outline, evaluation.scores.law, evaluation.scores.precedent,
           evaluation.scores.application, evaluation.scores.conclusion, evaluation.scores.expression,
-          evaluation.errorType, evaluation.checkType, evaluation.nextReview, JSON.stringify(payload), digest(payload)]);
+          evaluation.errorType, evaluation.checkType, evaluation.nextReview, JSON.stringify(payload), digest(payload),
+          item.grading_key_version || item.source_version, item.grading_encryption_key_id]);
       await client.query(
         `INSERT INTO learning_events(owner_id,subject_id,stable_key,event_type,payload)
          VALUES($1,$2,$3,'P2_GRADED',$4)`, [ownerId, SUBJECT, evaluation.key,
@@ -290,10 +313,11 @@ export function createPostgresExecutor(options = {}) {
   const env = options.env || process.env;
   return async (name, payload, context = {}) => {
     const ownerId = required(context.ownerId, "authenticated owner");
-    if (name === "issueCivilP1") return issue(pool, ownerId, "P1", payload);
-    if (name === "issueCivilP2") return issue(pool, ownerId, "P2", payload);
-    if (name === "gradeCivilP1") return gradeP1(pool, ownerId, payload, gradingKey(env));
-    if (name === "prepareCivilP2Grade") return prepareP2(pool, ownerId, payload, gradingKey(env));
+    const keyId = () => required(env.GRADING_ENCRYPTION_KEY_ID, "GRADING_ENCRYPTION_KEY_ID");
+    if (name === "issueCivilP1") return issue(pool, ownerId, "P1", payload, keyId());
+    if (name === "issueCivilP2") return issue(pool, ownerId, "P2", payload, keyId());
+    if (name === "gradeCivilP1") return gradeP1(pool, ownerId, payload, gradingKey(env), keyId());
+    if (name === "prepareCivilP2Grade") return prepareP2(pool, ownerId, payload, gradingKey(env), keyId());
     if (name === "commitCivilP2Grade") return commitP2(pool, ownerId, payload);
     throw new Error(`unsupported PostgreSQL tool: ${name}`);
   };
