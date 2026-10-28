@@ -211,7 +211,17 @@ def validate(root=ROOT):
         check(google_source_id(row.get("source_url", "")) in source_ids, f"textbook source URL: {row.get('unit_id')}")
     for item in REQUIRED:
         check((root / item).is_file(), f"required file: {item}")
-    excluded = {".git", "_workspace", "tmp", "private", "raw", "__pycache__"}
+    excluded = {
+        ".git",
+        ".next",
+        ".vercel",
+        "_workspace",
+        "tmp",
+        "private",
+        "raw",
+        "node_modules",
+        "__pycache__",
+    }
     for path in root.rglob("*"):
         rel = path.relative_to(root)
         if not path.is_file() or any(p in excluded for p in rel.parts):
