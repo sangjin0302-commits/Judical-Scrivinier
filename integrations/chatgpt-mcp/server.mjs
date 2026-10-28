@@ -35,6 +35,36 @@ const TOOLS = [
       },
       additionalProperties: false
     }
+  },
+  {
+    name: "issueCivilP2",
+    title: "민법 2차 공식 사례 출제",
+    description: "독립 테스트 문제은행에서 공식 2차 사례와 소문항을 출제합니다.",
+    inputSchema: { type: "object", required: ["requestId"], properties: {
+      requestId: { type: "string", minLength: 1, maxLength: 200 },
+      caseCount: { type: "integer", minimum: 1, maximum: 20 },
+      mode: { type: "string", enum: ["전범위", "범위지정", "취약"] },
+      keyword: { type: "string", maxLength: 200 }
+    }, additionalProperties: false }
+  },
+  {
+    name: "prepareCivilP2Grade",
+    title: "민법 2차 원답 제출 및 채점기준 조회",
+    description: "실제 원답 전체를 확정한 뒤에만 해당 소문항의 비공개 채점기준을 조회합니다.",
+    inputSchema: { type: "object", required: ["setId", "answers"], properties: {
+      setId: { type: "string", minLength: 1, maxLength: 100 },
+      answers: { type: "array", minItems: 1, items: { type: "object", required: ["key", "text"],
+        properties: { key: { type: "string" }, text: { type: "string", minLength: 1, maxLength: 50000 } },
+        additionalProperties: false } }
+    }, additionalProperties: false }
+  },
+  {
+    name: "commitCivilP2Grade",
+    title: "민법 2차 AI 학습평가 기록 확정",
+    description: "7요소 평가와 점수·보완사항을 기록하고 검증한 뒤 제출 완료로 표시합니다.",
+    inputSchema: { type: "object", required: ["setId", "evaluations"], properties: {
+      setId: { type: "string", minLength: 1, maxLength: 100 }, evaluations: { type: "array", minItems: 1 }
+    }, additionalProperties: false }
   }
 ];
 
@@ -62,6 +92,35 @@ export function validateToolInput(name, input = {}) {
     const answers = input.answers.map((answer) => String(answer).trim().toUpperCase());
     if (answers.some((answer) => answer !== "O" && answer !== "X")) throw new Error("답안은 O 또는 X만 허용합니다.");
     return { setId, answers };
+  }
+  if (name === "issueCivilP2") {
+    const unknown = Object.keys(input).filter((key) => !["requestId", "caseCount", "mode", "keyword"].includes(key));
+    if (unknown.length) throw new Error(`허용되지 않은 입력: ${unknown.join(", ")}`);
+    const requestId = String(input.requestId || "").trim();
+    const caseCount = input.caseCount === undefined ? 1 : Number(input.caseCount);
+    const mode = String(input.mode || "전범위").trim();
+    const keyword = String(input.keyword || "").trim();
+    if (!requestId || requestId.length > 200) throw new Error("requestId가 유효하지 않습니다.");
+    if (!Number.isInteger(caseCount) || caseCount < 1 || caseCount > 20) throw new Error("caseCount가 유효하지 않습니다.");
+    if (!["전범위", "범위지정", "취약"].includes(mode)) throw new Error("mode가 유효하지 않습니다.");
+    if (keyword.length > 200 || (mode === "범위지정" && !keyword)) throw new Error("keyword가 유효하지 않습니다.");
+    return { requestId, caseCount, mode, keyword };
+  }
+  if (name === "prepareCivilP2Grade") {
+    const unknown = Object.keys(input).filter((key) => !["setId", "answers"].includes(key));
+    if (unknown.length) throw new Error(`허용되지 않은 입력: ${unknown.join(", ")}`);
+    const setId = String(input.setId || "").trim();
+    if (!setId || setId.length > 100 || !Array.isArray(input.answers) || !input.answers.length) throw new Error("setId/answers가 유효하지 않습니다.");
+    const answers = input.answers.map((item) => ({ key: String(item?.key || "").trim(), text: String(item?.text || "").trim() }));
+    if (answers.some((item) => !item.key || !item.text || item.text.length > 50000)) throw new Error("실제 원답이 유효하지 않습니다.");
+    return { setId, answers };
+  }
+  if (name === "commitCivilP2Grade") {
+    const unknown = Object.keys(input).filter((key) => !["setId", "evaluations"].includes(key));
+    if (unknown.length) throw new Error(`허용되지 않은 입력: ${unknown.join(", ")}`);
+    const setId = String(input.setId || "").trim();
+    if (!setId || setId.length > 100 || !Array.isArray(input.evaluations) || !input.evaluations.length) throw new Error("setId/evaluations가 유효하지 않습니다.");
+    return { setId, evaluations: input.evaluations };
   }
   throw new Error(`지원하지 않는 도구: ${name}`);
 }
@@ -126,7 +185,11 @@ export async function executeAppsScript(functionName, parameters, options = {}) 
 
 export async function callTool(name, input, executor = executeAppsScript) {
   const payload = validateToolInput(name, input);
-  const functionName = name === "issueCivilP1" ? "PB1F_issue" : "PB1F_grade";
+  const functions = {
+    issueCivilP1: "PB1F_issue", gradeCivilP1: "PB1F_grade", issueCivilP2: "P2F_issue",
+    prepareCivilP2Grade: "P2F_prepareGrade", commitCivilP2Grade: "P2F_commitGrade"
+  };
+  const functionName = functions[name];
   const result = await executor(functionName, [payload]);
   return {
     content: [{ type: "text", text: JSON.stringify(result) }],

@@ -49,6 +49,43 @@ const baseHandler = createMcpHandler(
       },
       async (input) => callTool("gradeCivilP1", input),
     );
+
+    server.registerTool(
+      "issueCivilP2",
+      { title: "민법 2차 공식 사례 출제", description: "독립 테스트 문제은행에서 공식 2차 사례와 소문항을 출제합니다.",
+        inputSchema: z.object({ requestId: z.string().min(1).max(200), caseCount: z.number().int().min(1).max(20).optional(),
+          mode: z.enum(["전범위", "범위지정", "취약"]).optional(), keyword: z.string().max(200).optional() }),
+        annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input) => callTool("issueCivilP2", input),
+    );
+
+    server.registerTool(
+      "prepareCivilP2Grade",
+      { title: "민법 2차 원답 제출 및 채점기준 조회",
+        description: "사용자의 실제 원답 전체를 확정한 뒤에만 선택된 소문항의 채점기준을 조회합니다.",
+        inputSchema: z.object({ setId: z.string().min(1).max(100), answers: z.array(z.object({
+          key: z.string().min(1).max(300), text: z.string().min(1).max(50000) })).min(1) }),
+        annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input) => callTool("prepareCivilP2Grade", input),
+    );
+
+    server.registerTool(
+      "commitCivilP2Grade",
+      { title: "민법 2차 AI 학습평가 기록 확정",
+        description: "7요소 AI 학습평가와 점수·보완사항을 기록하고 검증한 뒤 제출 완료로 표시합니다.",
+        inputSchema: z.object({ setId: z.string().min(1).max(100), evaluations: z.array(z.object({
+          key: z.string().min(1).max(300), maxPoints: z.number().positive(), awardedPoints: z.number().nonnegative(),
+          scores: z.object({ issue: z.number().int().min(0).max(2), outline: z.number().int().min(0).max(2),
+            law: z.number().int().min(0).max(2), precedent: z.number().int().min(0).max(2),
+            application: z.number().int().min(0).max(2), conclusion: z.number().int().min(0).max(2),
+            expression: z.number().int().min(0).max(2) }), correction: z.string().max(10000).optional(),
+          errorType: z.string().max(1000).optional(), missingOutline: z.string().max(10000).optional(),
+          wrongLaw: z.string().max(10000).optional(), applicationFix: z.string().max(10000).optional(),
+          modelDifference: z.string().max(10000).optional(), nextReview: z.string().max(1000).optional()
+        })).min(1) }), annotations: writeAnnotations, securitySchemes: oauthSecurity,
+        _meta: { securitySchemes: oauthSecurity } },
+      async (input) => callTool("commitCivilP2Grade", input),
+    );
   },
   {
     serverInfo: { name: "civil-p1-chatgpt-mcp", version: "0.2.0" },

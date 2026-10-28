@@ -56,7 +56,24 @@ test("Apps Script adapter refreshes OAuth and invokes only configured deployment
   assert.doesNotMatch(JSON.stringify(requests[1]), /refresh-token|client-secret/);
 });
 
-test("server exposes exactly the two approved tools", async () => {
+test("P2 tools map to the three-stage Apps Script contract", async () => {
+  const calls = [];
+  const executor = async (...args) => { calls.push(args); return { ok: true }; };
+  await callTool("issueCivilP2", { requestId: "p2-r1", caseCount: 1 }, executor);
+  await callTool("prepareCivilP2Grade", { setId: "P2-1", answers: [{ key: "k1", text: "원답" }] }, executor);
+  await callTool("commitCivilP2Grade", { setId: "P2-1", evaluations: [{ key: "k1" }] }, executor);
+  assert.deepEqual(calls.map((call) => call[0]), ["P2F_issue", "P2F_prepareGrade", "P2F_commitGrade"]);
+});
+
+test("P2 answer submission rejects empty text before Apps Script", () => {
+  assert.throws(() => validateToolInput("prepareCivilP2Grade", {
+    setId: "P2-1", answers: [{ key: "k1", text: "" }]
+  }), /원답/);
+});
+
+test("server exposes the approved P1 and staged P2 tools", async () => {
   const response = await handleRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(response.result.tools.map((tool) => tool.name), ["issueCivilP1", "gradeCivilP1"]);
+  assert.deepEqual(response.result.tools.map((tool) => tool.name), [
+    "issueCivilP1", "gradeCivilP1", "issueCivilP2", "prepareCivilP2Grade", "commitCivilP2Grade"
+  ]);
 });
