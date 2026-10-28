@@ -101,7 +101,8 @@ async function issue(pool, ownerId, stage, input) {
          FROM problems p
         WHERE p.subject_id=$1 AND p.stage=$2 AND p.published=true
           AND EXISTS (SELECT 1 FROM private_grading_keys k
-                      WHERE k.subject_id=p.subject_id AND k.stable_key=p.stable_key)
+                      WHERE k.subject_id=p.subject_id AND k.stable_key=p.stable_key
+                        AND k.verification_state='verified' AND k.active_for_grading=true)
           AND ($3='' OR p.prompt_text ILIKE '%' || $3 || '%' OR p.selection_metadata::text ILIKE '%' || $3 || '%')
         ORDER BY md5(p.stable_key || $4) LIMIT $5`, [SUBJECT, stage, keyword, input.requestId, count]);
     if (candidates.rowCount !== count) throw new Error(`not enough published ${stage} problems`);
@@ -130,8 +131,9 @@ async function latestKeys(client, items) {
   const result = new Map();
   for (const item of items) {
     const key = await client.query(
-      `SELECT key_version, encrypted_payload FROM private_grading_keys
+      `SELECT key_version, encryption_key_id, encrypted_payload FROM private_grading_keys
        WHERE subject_id=$1 AND stable_key=$2
+         AND verification_state='verified' AND active_for_grading=true
        ORDER BY (key_version=$3) DESC, created_at DESC LIMIT 1`,
       [SUBJECT, item.stable_key, item.source_version]);
     if (key.rowCount !== 1) throw new Error(`grading key missing: ${item.stable_key}`);

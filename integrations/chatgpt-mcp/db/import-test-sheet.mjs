@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import pg from "pg";
 
@@ -10,7 +9,6 @@ const repo = resolve(import.meta.dirname, "../../..");
 const privateDir = resolve(repo, "private");
 const clientFile = process.env.GOOGLE_OAUTH_CLIENT_FILE || resolve(privateDir, "oauth/google-desktop-client.json");
 const tokenFile = process.env.GOOGLE_OAUTH_TOKEN_FILE || resolve(privateDir, "oauth/google-user-token.json");
-const encryptionFile = process.env.GRADING_KEY_FILE || resolve(privateDir, "postgres-grading-key.bin");
 
 const sha = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 const stableJson = (value) => JSON.stringify(value, Object.keys(value).sort());
@@ -80,12 +78,12 @@ async function readRows(sheet, startRow, columns, endRow) {
   return result;
 }
 
-let encryptionKey;
-if (existsSync(encryptionFile)) encryptionKey = await readFile(encryptionFile);
-else {
-  throw new Error("grading encryption key is required; refusing to generate a replacement key");
-}
+const encodedEncryptionKey = process.env.GRADING_KEY_BASE64;
+if (!encodedEncryptionKey) throw new Error("GRADING_KEY_BASE64 is required; refusing to generate a replacement key");
+const encryptionKey = Buffer.from(encodedEncryptionKey, "base64");
 if (encryptionKey.length !== 32) throw new Error("grading encryption key must be 32 bytes");
+const encryptionKeyId = String(process.env.GRADING_ENCRYPTION_KEY_ID || "").trim();
+if (!encryptionKeyId) throw new Error("GRADING_ENCRYPTION_KEY_ID is required");
 function encryptJson(value) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey, iv);
@@ -183,13 +181,15 @@ try {
     if (key) {
       const payload = { answer: key[1], rationale: key[2], rubric: key[3], source: key[4], status: key[6] };
       const version = String(key[5] || row[9] || "unknown");
-      gradingKeyData.push(["CIVIL", stableKey, version, encryptJson(payload), sha(JSON.stringify(payload))]);
+      gradingKeyData.push(["CIVIL", stableKey, version, encryptJson(payload), sha(JSON.stringify(payload)),
+        encryptionKeyId, "verified", true, new Date()]);
       counts.gradingKeys++;
     }
   }
   await batchInsert("problems", ["subject_id","stable_key","unit_id","stage","source_order","source_ref",
     "source_version","prompt_text","max_points","published","selection_metadata","content_digest"], problemData, 100);
-  await batchInsert("private_grading_keys", ["subject_id","stable_key","key_version","encrypted_payload","payload_digest"], gradingKeyData, 100);
+  await batchInsert("private_grading_keys", ["subject_id","stable_key","key_version","encrypted_payload","payload_digest",
+    "encryption_key_id","verification_state","active_for_grading","verified_at"], gradingKeyData, 100);
 
   const setData=[], itemData=[], submissionData=[], answerData=[], p1Data=[], p2Data=[], eventData=[];
   for (const [setId, items] of sets) {
