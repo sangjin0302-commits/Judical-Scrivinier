@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'apps-script/pb1-fast-safe/PB1FastSafe.gs'), 'utf8');
-const html = fs.readFileSync(path.join(root, 'apps-script/pb1-fast-safe/PB1FastSafe.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'apps-script/pb1-fast-safe/PB1FastSafeUI.html'), 'utf8');
 
 test('completed request mapping is written only after publication verification', () => {
   const publicationCheck = source.indexOf('PB1F_validateSetRows_(published, pending, true, true)');

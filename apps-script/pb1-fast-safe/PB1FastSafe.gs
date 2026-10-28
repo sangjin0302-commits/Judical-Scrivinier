@@ -444,7 +444,7 @@ function PB1F_grade(payload) {
 }
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('PB1FastSafe')
+  return HtmlService.createHtmlOutputFromFile('PB1FastSafeUI')
     .setTitle('민법 1차 OX 10문제')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }

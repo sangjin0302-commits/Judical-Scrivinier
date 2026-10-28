@@ -24,7 +24,7 @@ REQUIRED = ["README.md", "START.md", "MANIFEST.md", "PROJECT_INSTRUCTIONS.md", "
  "docs/exam-demand-evidence.md", "docs/compression-pilot-plan.md", "docs/compression-report.md"]
 REQUIRED += ["docs/pb1-fast-safe-design.md", "docs/pb1-benchmark-protocol.md",
              "apps-script/pb1-fast-safe/PB1FastSafe.gs",
-             "apps-script/pb1-fast-safe/PB1FastSafe.html",
+             "apps-script/pb1-fast-safe/PB1FastSafeUI.html",
              "apps-script/pb1-fast-safe/README.md"]
 
 @dataclass
