@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -65,11 +66,31 @@ export function validateToolInput(name, input = {}) {
   throw new Error(`지원하지 않는 도구: ${name}`);
 }
 
+async function oauthSecrets(env) {
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN) {
+    return {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+      refreshToken: env.GOOGLE_REFRESH_TOKEN
+    };
+  }
+  const clientFile = resolve(env.GOOGLE_OAUTH_CLIENT_FILE || "private/oauth/google-desktop-client.json");
+  const tokenFile = resolve(env.GOOGLE_OAUTH_TOKEN_FILE || "private/oauth/google-user-token.json");
+  const clientJson = JSON.parse(await readFile(clientFile, "utf8"));
+  const tokenJson = JSON.parse(await readFile(tokenFile, "utf8"));
+  const client = clientJson.installed || clientJson.web;
+  if (!client?.client_id || !client?.client_secret || !tokenJson.refresh_token) {
+    throw new Error("로컬 Google OAuth 자격증명이 완전하지 않습니다.");
+  }
+  return { clientId: client.client_id, clientSecret: client.client_secret, refreshToken: tokenJson.refresh_token };
+}
+
 async function googleAccessToken(env = process.env, fetchImpl = fetch) {
+  const secrets = await oauthSecrets(env);
   const body = new URLSearchParams({
-    client_id: requiredEnv("GOOGLE_CLIENT_ID", env),
-    client_secret: requiredEnv("GOOGLE_CLIENT_SECRET", env),
-    refresh_token: requiredEnv("GOOGLE_REFRESH_TOKEN", env),
+    client_id: secrets.clientId,
+    client_secret: secrets.clientSecret,
+    refresh_token: secrets.refreshToken,
     grant_type: "refresh_token"
   });
   const response = await fetchImpl("https://oauth2.googleapis.com/token", {

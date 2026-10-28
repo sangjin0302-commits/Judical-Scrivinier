@@ -15,8 +15,11 @@
 
 ```powershell
 npm test
+npm run oauth:login
 npm start
 ```
+
+`oauth:login`은 로컬 루프백 콜백만 열고, 발급된 refresh token을 기본적으로 Git 제외 경로인 `private/oauth/google-user-token.json`에 저장한다. 토큰 값은 표준 출력에 쓰지 않는다.
 
 ChatGPT에서는 Secure MCP Tunnel이 이 stdio 명령을 실행하도록 연결한다. 터널은 로컬 서버를 공개 인터넷에 노출하지 않지만 Google 사용자 인증을 대신하지 않는다. Google refresh token은 해당 사용자의 동의로 발급하고, Apps Script와 동일한 표준 Cloud 프로젝트의 OAuth 클라이언트를 사용해야 한다.
 
