@@ -40,7 +40,7 @@ test("new issue sets snapshot exact grading key version and encryption key id", 
   assert.equal(result.count, 10);
   assert.equal(itemInserts.length, 10);
   assert.equal(advisoryLocks.length, 1);
-  assert.match(advisoryLocks[0], /snapshot-1$/);
+  assert.match(advisoryLocks[0], /^[0-9a-f]{64}$/);
   assert.ok(itemInserts.every((values) => values[4] === "source-v1" && values[5] === "key-v2"));
 });
 
