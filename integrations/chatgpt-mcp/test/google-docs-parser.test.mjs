@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { documentParagraphs, parseP1Document, parseP2Document } from "../db/google-docs-parser.mjs";
@@ -7,6 +8,14 @@ const paragraph = (text, startIndex) => ({
   startIndex,
   endIndex: startIndex + text.length + 1,
   paragraph: { elements: [{ textRun: { content: text + "\n" } }] },
+});
+
+test("parity maintenance route requires timing-safe ephemeral authentication", async () => {
+  const source = await readFile(new URL("../app/api/maintenance/verify-google-docs-parity/route.js", import.meta.url), "utf8");
+  assert.match(source, /timingSafeEqual/);
+  assert.match(source, /MAINTENANCE_TOKEN/);
+  assert.match(source, /verifyGoogleDocsParity/);
+  assert.match(source, /error: "unauthorized"/);
 });
 
 test("tabbed Docs content flattens without losing tab-local locator", () => {
