@@ -15,3 +15,5 @@ tmp/
 raw/
 credentials*.json
 token*.json
+.vercel
+.env*

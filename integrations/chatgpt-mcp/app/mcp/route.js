@@ -59,7 +59,10 @@ const handler = withMcpAuth(baseHandler, createWorkOSVerifier(), {
   required: true,
   requiredScopes: config.requiredScopes,
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
-  resourceUrl: config.resource,
+  // mcp-handler appends resourceMetadataPath to this value.  Passing the
+  // complete /mcp resource URL would advertise the non-existent
+  // /mcp/.well-known/... endpoint and break OAuth discovery in ChatGPT.
+  resourceUrl: new URL(config.resource).origin,
 });
 
 export { handler as GET, handler as POST };
