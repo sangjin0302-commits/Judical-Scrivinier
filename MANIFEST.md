@@ -22,6 +22,7 @@
 | rules/speed.md | 패키지 0.1 | 조회 경량화; 안전 절차 생략 금지 |
 | rules/source-update.md | 설계안 0.1 | 자동 반영 비활성 |
 | docs/slimming-plan.md, docs/sync-design.md | 검토안 | 원본 변경 실행 권한 없음 |
+| docs/book-to-skill-civil-pilot.md, experiments/book-to-skill/ | 독립 실험 | 비공개 원문 캐시와 분리된 신의칙 단원 시범; 기존 강의·공식 출제·채점 대체 아님 |
 
 사용자의 이번 교수법 지시에 따라 기본 과외는 강의 중심으로 진행한다. 과거 문서의 복습 우선·질문 나열 흐름보다 교수법 정본을 적용하되, 원본 데이터·공식 출제·채점·기록 보호 규칙은 그대로 유지한다. 설명 지침을 다른 문서에 별도 정본으로 만들지 않는다.
 

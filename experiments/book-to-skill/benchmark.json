@@ -1,0 +1,21 @@
+{
+  "measurement": "local file retrieval only; excludes ChatGPT generation and network latency",
+  "existing": {
+    "path": "lessons/B1-P0040-0047.md",
+    "bytes": 14547,
+    "runs": 100,
+    "min_ms": 0.1446,
+    "median_ms": 0.16615,
+    "max_ms": 0.6473,
+    "failures": 0
+  },
+  "pilot": {
+    "path": "experiments/book-to-skill/B1-P0040-0047-pilot.md",
+    "bytes": 5547,
+    "runs": 100,
+    "min_ms": 0.1444,
+    "median_ms": 0.1578,
+    "max_ms": 0.7771,
+    "failures": 0
+  }
+}
