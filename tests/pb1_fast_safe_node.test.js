@@ -24,6 +24,7 @@ test('retry, ownership, publication and answer-conflict guards are present', () 
   assert.match(source, /다음 행 포인터가 기존 기록을 가리킴/);
   assert.match(source, /String\(row\[6\]\)\.trim\(\) !== '확정'/);
   assert.match(source, /PB1F_validateSetRows_\(rows, pending, !createdNow, true\)/);
+  assert.match(source, /LOCK_MS: 120000/);
 });
 
 test('browser preserves the pending request id across a failed issue call', () => {

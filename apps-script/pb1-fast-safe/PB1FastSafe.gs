@@ -15,7 +15,7 @@ var PB1F = Object.freeze({
   FIRST_DATA_ROW: 5,
   MAX_PICK: 40,
   CANDIDATE_ROWS: 120,
-  LOCK_MS: 30000
+  LOCK_MS: 120000
 });
 
 function PB1F_ss_() {
