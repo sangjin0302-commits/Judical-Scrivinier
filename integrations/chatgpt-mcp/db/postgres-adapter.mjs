@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import pg from "pg";
 import { postgresConnectionOptions } from "./pg-connection.mjs";
+import { buildP2SemanticAudit } from "./p2-semantic-evaluation.mjs";
 
 const SUBJECT = "CIVIL";
 const stableValue = (value) => {
@@ -253,13 +254,13 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
         const keyRow = keys.get(item.stable_key);
         const payload = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
           gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
-        return { key: item.stable_key, maxPoints: Number(item.max_points), rubric: payload.rubric,
-          rationale: payload.rationale, source: payload.source };
+        return { key: item.stable_key, maxPoints: Number(item.max_points), modelAnswer: payload.answer,
+          rubric: payload.rubric, rationale: payload.rationale, source: payload.source };
       }) };
   } finally { client.release(); }
 }
 
-async function commitP2(pool, ownerId, input) {
+async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
   const evaluations = [...input.evaluations].sort((a, b) => a.key.localeCompare(b.key));
   const gradeDigest = digest(evaluations);
   return inTransaction(pool, async (client) => {
@@ -270,17 +271,45 @@ async function commitP2(pool, ownerId, input) {
     const row = submission.rows[0];
     if (row.state === "COMMITTED") {
       if (row.grade_digest !== gradeDigest) throw new Error("changed evaluation payload rejected");
-      return { ok: true, replayed: true, setId: input.setId, submissionId: row.submission_id };
+      const grades = await client.query(
+        `SELECT stable_key,awarded_points,max_points,evaluation_payload
+           FROM p2_grades WHERE submission_id=$1 ORDER BY stable_key`, [row.submission_id]);
+      return { ok: true, replayed: true, setId: input.setId, submissionId: row.submission_id,
+        summaries: grades.rows.map((grade) => {
+          const audit = grade.evaluation_payload?.semanticAudit;
+          return { key: grade.stable_key, awardedPoints: Number(grade.awarded_points),
+            maxPoints: Number(grade.max_points), ...(audit ? {
+              coreElementMatch: audit.coreElementMatch, matchedLaw: audit.matchedLaw,
+              missingLaw: audit.missingLaw, misappliedLaw: audit.misappliedLaw,
+              improvement: audit.improvement, scoreRationale: audit.scoreRationale,
+            } : {}) };
+        }) };
     }
     if (items.length !== evaluations.length || items.some((item) => !evaluations.find((e) => e.key === item.stable_key))) {
       throw new Error("evaluations must exactly match the issued P2 set");
     }
+    const keys = await latestKeys(client, items, keyId);
+    const originals = await client.query(
+      `SELECT stable_key,answer_text FROM original_answers WHERE submission_id=$1`, [row.submission_id]);
+    const originalsByKey = new Map(originals.rows.map((answer) => [answer.stable_key, answer.answer_text]));
+    const summaries = [];
     for (const evaluation of evaluations) {
       const item = items.find((candidate) => candidate.stable_key === evaluation.key);
       if (Number(evaluation.maxPoints) !== Number(item.max_points)) throw new Error(`maxPoints mismatch: ${evaluation.key}`);
+      if (!Number.isFinite(evaluation.awardedPoints) || evaluation.awardedPoints < 0 ||
+          evaluation.awardedPoints > Number(item.max_points)) throw new Error("awarded points outside official maximum");
+      const keyRow = keys.get(item.stable_key);
+      const gradingSource = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
+        gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
+      const semanticAudit = buildP2SemanticAudit(evaluation.semanticAnalysis, {
+        modelAnswer: gradingSource.answer, rubric: gradingSource.rubric,
+        originalAnswer: originalsByKey.get(item.stable_key) });
       const payload = { correction: evaluation.correction || "", missingOutline: evaluation.missingOutline || "",
         wrongLaw: evaluation.wrongLaw || "", applicationFix: evaluation.applicationFix || "",
-        modelDifference: evaluation.modelDifference || "", nextReview: evaluation.nextReview };
+        modelDifference: evaluation.modelDifference || "", nextReview: evaluation.nextReview,
+        semanticAudit, aiScore: { awardedPoints: evaluation.awardedPoints,
+          officialMaximum: Number(item.max_points), scores: evaluation.scores,
+          rationale: semanticAudit.scoreRationale } };
       await client.query(
         `INSERT INTO p2_grades(submission_id,subject_id,stable_key,awarded_points,max_points,
           issue_score,outline_score,law_score,precedent_score,application_score,conclusion_score,expression_score,
@@ -295,9 +324,15 @@ async function commitP2(pool, ownerId, input) {
         `INSERT INTO learning_events(owner_id,subject_id,stable_key,event_type,payload)
          VALUES($1,$2,$3,'P2_GRADED',$4)`, [ownerId, SUBJECT, evaluation.key,
           JSON.stringify({ awardedPoints: evaluation.awardedPoints, maxPoints: evaluation.maxPoints, scores: evaluation.scores })]);
+      summaries.push({ key: evaluation.key, coreElementMatch: semanticAudit.coreElementMatch,
+        awardedPoints: evaluation.awardedPoints, maxPoints: evaluation.maxPoints,
+        matchedLaw: semanticAudit.matchedLaw, missingLaw: semanticAudit.missingLaw,
+        misappliedLaw: semanticAudit.misappliedLaw, improvement: semanticAudit.improvement,
+        scoreRationale: semanticAudit.scoreRationale });
     }
-    await finalizeSubmission(client, ownerId, input.setId, row.submission_id, gradeDigest, "P2_GRADED", evaluations);
-    return { ok: true, replayed: false, setId: input.setId, submissionId: row.submission_id };
+    await finalizeSubmission(client, ownerId, input.setId, row.submission_id, gradeDigest, "P2_GRADED",
+      evaluations.map(({ semanticAnalysis, ...evaluation }) => evaluation));
+    return { ok: true, replayed: false, setId: input.setId, submissionId: row.submission_id, summaries };
   });
 }
 
@@ -323,7 +358,7 @@ export function createPostgresExecutor(options = {}) {
     if (name === "issueCivilP2") return issue(pool, ownerId, "P2", payload, keyId());
     if (name === "gradeCivilP1") return gradeP1(pool, ownerId, payload, gradingKey(env), keyId());
     if (name === "prepareCivilP2Grade") return prepareP2(pool, ownerId, payload, gradingKey(env), keyId());
-    if (name === "commitCivilP2Grade") return commitP2(pool, ownerId, payload);
+    if (name === "commitCivilP2Grade") return commitP2(pool, ownerId, payload, gradingKey(env), keyId());
     throw new Error(`unsupported PostgreSQL tool: ${name}`);
   };
 }

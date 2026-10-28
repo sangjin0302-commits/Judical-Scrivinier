@@ -9,8 +9,8 @@ import { importConceptSheetQuestions } from "../../db/import-concept-sheet-quest
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const config = authConfig();
-const oauthSecurity = [{ type: "oauth2", scopes: config.requiredScopes }];
+const oauthSecurity = [{ type: "oauth2", scopes: String(process.env.WORKOS_REQUIRED_SCOPES || "openid")
+  .split(/[ ,]+/).map((value) => value.trim()).filter(Boolean) }];
 const writeAnnotations = {
   readOnlyHint: false,
   destructiveHint: false,
@@ -76,7 +76,7 @@ const baseHandler = createMcpHandler(
     server.registerTool(
       "prepareCivilP2Grade",
       { title: "민법 2차 원답 제출 및 채점기준 조회",
-        description: "사용자의 실제 원답 전체를 확정한 뒤에만 선택된 소문항의 채점기준을 조회합니다.",
+        description: "사용자의 실제 원답 전체를 확정한 뒤에만 선택된 소문항의 공식 모범답안과 채점기준을 조회합니다.",
         inputSchema: z.object({ setId: z.string().min(1).max(100), answers: z.array(z.object({
           key: z.string().min(1).max(300), text: z.string().min(1).max(50000) })).min(1) }),
         annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
@@ -88,7 +88,7 @@ const baseHandler = createMcpHandler(
     server.registerTool(
       "commitCivilP2Grade",
       { title: "민법 2차 AI 학습평가 기록 확정",
-        description: "7요소 AI 학습평가와 점수·보완사항을 기록하고 검증한 뒤 제출 완료로 표시합니다.",
+        description: "제출된 원답을 공식 모범답안 핵심요소와 의미 단위로 대조합니다. 근거 발췌문을 확인하고 핵심요소 일치율과 기존 7요소 배점 점수를 분리해 기록합니다.",
         inputSchema: z.object({ setId: z.string().min(1).max(100), evaluations: z.array(z.object({
           key: z.string().min(1).max(300), maxPoints: z.number().positive(), awardedPoints: z.number().nonnegative(),
           scores: z.object({ issue: z.number().int().min(0).max(2), outline: z.number().int().min(0).max(2),
@@ -98,7 +98,22 @@ const baseHandler = createMcpHandler(
           errorType: z.string().min(1).max(1000), checkType: z.string().min(1).max(1000),
           missingOutline: z.string().max(10000).optional(),
           wrongLaw: z.string().max(10000).optional(), applicationFix: z.string().max(10000).optional(),
-          modelDifference: z.string().max(10000).optional(), nextReview: z.string().min(1).max(1000)
+          modelDifference: z.string().max(10000).optional(), nextReview: z.string().min(1).max(1000),
+          semanticAnalysis: z.object({
+            elements: z.array(z.object({
+              category: z.enum(["ISSUE", "LAW", "ELEMENT", "PRECEDENT", "APPLICATION", "CONCLUSION"]),
+              criterion: z.string().min(1).max(500),
+              status: z.enum(["MATCH", "PARTIAL", "MISSING", "ERROR", "ALTERNATIVE_ACCEPTED"]),
+              modelExcerpt: z.string().min(1).max(2000), answerExcerpt: z.string().max(2000).optional(),
+              explanation: z.string().min(1).max(2000), alternativeSourceRef: z.string().max(500).optional(),
+            })).min(1).max(30),
+            matchedLaw: z.array(z.string().min(1).max(1000)).max(30),
+            missingLaw: z.array(z.string().min(1).max(1000)).max(30),
+            misappliedLaw: z.array(z.string().min(1).max(1000)).max(30),
+            improvement: z.string().min(1).max(5000),
+            decompositionRationale: z.string().min(1).max(5000),
+            scoreRationale: z.string().min(1).max(5000),
+          })
         })).min(1) }), annotations: writeAnnotations, securitySchemes: oauthSecurity,
         _meta: { securitySchemes: oauthSecurity } },
       async (input, ctx) => callTool("commitCivilP2Grade", input, {
@@ -187,14 +202,21 @@ const baseHandler = createMcpHandler(
   },
 );
 
-const handler = withMcpAuth(baseHandler, createWorkOSVerifier(), {
-  required: true,
-  requiredScopes: config.requiredScopes,
-  resourceMetadataPath: "/.well-known/oauth-protected-resource",
-  // mcp-handler appends resourceMetadataPath to this value.  Passing the
-  // complete /mcp resource URL would advertise the non-existent
-  // /mcp/.well-known/... endpoint and break OAuth discovery in ChatGPT.
-  resourceUrl: new URL(config.resource).origin,
-});
+let handler;
+function getHandler() {
+  if (!handler) {
+    const config = authConfig();
+    handler = withMcpAuth(baseHandler, createWorkOSVerifier(), {
+      required: true,
+      requiredScopes: config.requiredScopes,
+      resourceMetadataPath: "/.well-known/oauth-protected-resource",
+      // mcp-handler appends resourceMetadataPath to this value. Passing the
+      // complete /mcp resource URL would advertise a non-existent endpoint.
+      resourceUrl: new URL(config.resource).origin,
+    });
+  }
+  return handler;
+}
 
-export { handler as GET, handler as POST };
+export function GET(request, context) { return getHandler()(request, context); }
+export function POST(request, context) { return getHandler()(request, context); }

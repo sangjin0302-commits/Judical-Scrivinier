@@ -65,7 +65,7 @@ const TOOLS = [
   {
     name: "commitCivilP2Grade",
     title: "민법 2차 AI 학습평가 기록 확정",
-    description: "7요소 평가와 점수·보완사항을 기록하고 검증한 뒤 제출 완료로 표시합니다.",
+    description: "공식 모범답안 핵심요소와 원답의 의미 비교 근거를 검증하고 기존 7요소 점수와 별도 기록합니다.",
     inputSchema: { type: "object", required: ["setId", "evaluations"], properties: {
       setId: { type: "string", minLength: 1, maxLength: 100 }, evaluations: { type: "array", minItems: 1 }
     }, additionalProperties: false }
@@ -127,6 +127,9 @@ export function validateToolInput(name, input = {}) {
     if (unknown.length) throw new Error(`허용되지 않은 입력: ${unknown.join(", ")}`);
     const setId = String(input.setId || "").trim();
     if (!setId || setId.length > 100 || !Array.isArray(input.evaluations) || !input.evaluations.length) throw new Error("setId/evaluations가 유효하지 않습니다.");
+    if (input.evaluations.some((evaluation) => !evaluation?.semanticAnalysis)) {
+      throw new Error("핵심요소 비교 근거가 필요합니다.");
+    }
     return { setId, evaluations: input.evaluations };
   }
   throw new Error(`지원하지 않는 도구: ${name}`);

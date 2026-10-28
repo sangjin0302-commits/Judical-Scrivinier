@@ -108,8 +108,11 @@ async function getConceptUnit(pool, ownerId, input) {
     const mode = requestedMode || unit.rows[0].study_mode || "INTEGRATED";
     const includeConcept = mode !== "PROBLEM_ONLY";
     const includeProblems = mode !== "CONCEPT_ONLY";
-    const [materials, questions, issues, problems, activities] = await Promise.all([
-      includeConcept ? client.query(
+    const linkTable = includeConcept ? await client.query(
+      "SELECT to_regclass('public.recall_question_issue_links') IS NOT NULL AS available") : null;
+    const issueLinksAvailable = linkTable?.rows[0]?.available === true;
+    const [materials, questions, issues, problems, activities, questionIssueLinks] = await Promise.all([
+      issueLinksAvailable ? client.query(
         `SELECT material_type,source_path,source_version,content_text,verification_state
            FROM concept_material_versions WHERE subject_id=$1 AND unit_id=$2 AND active=true
           ORDER BY material_type`, [SUBJECT, unitId]) : { rows: [] },
@@ -130,10 +133,18 @@ async function getConceptUnit(pool, ownerId, input) {
            FROM concept_study_activities
           WHERE owner_id=$1 AND subject_id=$2 AND unit_id=$3
           GROUP BY activity_type ORDER BY activity_type`, [ownerId, SUBJECT, unitId]),
+      includeConcept ? client.query(
+        `SELECT l.question_id,l.issue_id,i.issue_tier,l.verification_state
+           FROM recall_question_issue_links l
+           JOIN recall_questions q ON q.subject_id=l.subject_id AND q.question_id=l.question_id
+           JOIN concept_issues i ON i.subject_id=l.subject_id AND i.issue_id=l.issue_id
+          WHERE l.subject_id=$1 AND q.unit_id=$2 AND i.unit_id=$2
+          ORDER BY l.question_id,l.issue_id`, [SUBJECT, unitId]) : { rows: [] },
     ]);
     return { ok: true, mode, unit: unit.rows[0], materials: materials.rows,
       recallQuestions: questions.rows, issues: issues.rows, linkedProblems: problems.rows,
-      studyActivities: activities.rows };
+      studyActivities: activities.rows, questionIssueLinks: questionIssueLinks.rows,
+      questionIssueLinkState: includeConcept ? (issueLinksAvailable ? "available" : "migration-pending") : "not-requested" };
   } finally { client.release(); }
 }
 

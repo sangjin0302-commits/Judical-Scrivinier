@@ -7,11 +7,14 @@ import { authConfig } from "../../../auth.mjs";
 
 export const dynamic = "force-dynamic";
 
-const config = authConfig();
-const handler = protectedResourceHandler({
-  authServerUrls: [config.issuer],
-  resourceUrl: config.resource,
-});
 const optionsHandler = metadataCorsOptionsRequestHandler();
 
-export { handler as GET, optionsHandler as OPTIONS };
+export function GET(request) {
+  const config = authConfig();
+  return protectedResourceHandler({
+    authServerUrls: [config.issuer],
+    resourceUrl: config.resource,
+  })(request);
+}
+
+export { optionsHandler as OPTIONS };

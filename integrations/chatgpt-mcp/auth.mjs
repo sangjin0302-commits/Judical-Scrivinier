@@ -35,11 +35,18 @@ function tokenScopes(payload) {
 }
 
 export function createWorkOSVerifier(env = process.env) {
-  const config = authConfig(env);
-  const jwks = createRemoteJWKSet(new URL(`${config.issuer}/oauth2/jwks`));
+  let initialized;
   return async (_request, bearerToken) => {
     if (!bearerToken) return undefined;
     try {
+      if (!initialized) {
+        const config = authConfig(env);
+        initialized = {
+          config,
+          jwks: createRemoteJWKSet(new URL(`${config.issuer}/oauth2/jwks`)),
+        };
+      }
+      const { config, jwks } = initialized;
       const { payload } = await jwtVerify(bearerToken, jwks, {
         issuer: config.issuer,
         audience: config.resource,

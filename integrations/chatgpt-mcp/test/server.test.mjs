@@ -61,7 +61,7 @@ test("P2 tools map to the three-stage Apps Script contract", async () => {
   const executor = async (...args) => { calls.push(args); return { ok: true }; };
   await callTool("issueCivilP2", { requestId: "p2-r1", caseCount: 1 }, executor);
   await callTool("prepareCivilP2Grade", { setId: "P2-1", answers: [{ key: "k1", text: "원답" }] }, executor);
-  await callTool("commitCivilP2Grade", { setId: "P2-1", evaluations: [{ key: "k1" }] }, executor);
+  await callTool("commitCivilP2Grade", { setId: "P2-1", evaluations: [{ key: "k1", semanticAnalysis: {} }] }, executor);
   assert.deepEqual(calls.map((call) => call[0]), ["P2F_issue", "P2F_prepareGrade", "P2F_commitGrade"]);
 });
 

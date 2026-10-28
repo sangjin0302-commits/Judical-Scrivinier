@@ -11,6 +11,7 @@ const ALLOWED = new Set([
   "0004_google_docs_sync.sql",
   "0005_concept_sheet_questions.sql",
   "0006_study_activity.sql",
+  "0007_recall_issue_links.sql",
 ]);
 
 function migrationBody(source) {
