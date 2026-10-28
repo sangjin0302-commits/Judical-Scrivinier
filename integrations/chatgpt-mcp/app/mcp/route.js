@@ -79,9 +79,10 @@ const baseHandler = createMcpHandler(
             law: z.number().int().min(0).max(2), precedent: z.number().int().min(0).max(2),
             application: z.number().int().min(0).max(2), conclusion: z.number().int().min(0).max(2),
             expression: z.number().int().min(0).max(2) }), correction: z.string().max(10000).optional(),
-          errorType: z.string().max(1000).optional(), missingOutline: z.string().max(10000).optional(),
+          errorType: z.string().min(1).max(1000), checkType: z.string().min(1).max(1000),
+          missingOutline: z.string().max(10000).optional(),
           wrongLaw: z.string().max(10000).optional(), applicationFix: z.string().max(10000).optional(),
-          modelDifference: z.string().max(10000).optional(), nextReview: z.string().max(1000).optional()
+          modelDifference: z.string().max(10000).optional(), nextReview: z.string().min(1).max(1000)
         })).min(1) }), annotations: writeAnnotations, securitySchemes: oauthSecurity,
         _meta: { securitySchemes: oauthSecurity } },
       async (input) => callTool("commitCivilP2Grade", input),

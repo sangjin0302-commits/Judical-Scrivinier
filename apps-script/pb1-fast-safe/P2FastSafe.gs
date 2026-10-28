@@ -229,7 +229,18 @@ function P2F_prepareGrade(payload) {
   } finally { lock.releaseLock(); }
 }
 
-function P2F_evaluations_(payload, record) {
+function P2F_allowed_(settings, a1) {
+  return settings.getRange(a1).getDisplayValues().map(function (row) { return String(row[0]).trim(); })
+    .filter(function (value) { return value; });
+}
+
+function P2F_requireAllowed_(value, allowed, label) {
+  value = String(value || '').trim();
+  if (!value || allowed.indexOf(value) < 0) throw new Error(label + ' 허용값 위반: ' + value);
+  return value;
+}
+
+function P2F_evaluations_(payload, record, allowed) {
   if (!Array.isArray(payload.evaluations) || payload.evaluations.length !== record.keys.length) {
     throw new Error('모든 소문항의 평가가 필요합니다.');
   }
@@ -250,13 +261,95 @@ function P2F_evaluations_(payload, record) {
       throw new Error('득점/배점이 유효하지 않습니다.');
     }
     map[key] = { key: key, seven: seven, maxPoints: maxPoints, awardedPoints: awarded,
-      correction: String(item.correction || ''), errorType: String(item.errorType || ''),
+      correction: String(item.correction || ''),
+      errorType: P2F_requireAllowed_(item.errorType, allowed.errorTypes, '오답 유형'),
+      checkType: P2F_requireAllowed_(item.checkType, allowed.checkTypes, '민법형 체크유형'),
       missingOutline: String(item.missingOutline || ''), wrongLaw: String(item.wrongLaw || ''),
       applicationFix: String(item.applicationFix || ''), modelDifference: String(item.modelDifference || ''),
-      nextReview: String(item.nextReview || '') };
+      nextReview: P2F_requireAllowed_(item.nextReview, allowed.reviewTypes, '다음 복습 형식') };
   });
   if (record.keys.some(function (key) { return !map[key]; })) throw new Error('평가 안정키 불일치');
   return record.keys.map(function (key) { return map[key]; });
+}
+
+function P2F_isBlank_(value) {
+  return value === '' || value === null || typeof value === 'undefined';
+}
+
+function P2F_sameValue_(actual, expected) {
+  if (actual instanceof Date && expected instanceof Date) return actual.getTime() === expected.getTime();
+  if (actual instanceof Date && typeof expected === 'number') return actual.getTime() === expected;
+  if (expected instanceof Date && actual instanceof Date) return actual.getTime() === expected.getTime();
+  if (expected instanceof Date && typeof actual === 'number') return expected.getTime() === actual;
+  if (typeof actual === 'number' || typeof expected === 'number') return Number(actual) === Number(expected);
+  return String(actual) === String(expected);
+}
+
+function P2F_planRow_(sheetRow, actual, expected, writableIndexes, label) {
+  writableIndexes.forEach(function (index) {
+    if (!P2F_isBlank_(actual[index]) && !P2F_sameValue_(actual[index], expected[index])) {
+      throw new Error(label + ' 기존 값 충돌: ' + sheetRow + '행 ' + (index + 1) + '열');
+    }
+  });
+  var runs = [];
+  var start = null;
+  writableIndexes.forEach(function (index, position) {
+    var missing = P2F_isBlank_(actual[index]);
+    if (missing && start === null) start = index;
+    var next = writableIndexes[position + 1];
+    if (start !== null && (!missing || next !== index + 1)) {
+      var end = missing ? index + 1 : index;
+      runs.push({ row: sheetRow, start: start, values: expected.slice(start, end) });
+      start = null;
+    }
+  });
+  return runs;
+}
+
+function P2F_applyRuns_(sheet, runs) {
+  runs.forEach(function (run) {
+    sheet.getRange(run.row, run.start + 1, 1, run.values.length).setValues([run.values]);
+  });
+}
+
+function P2F_testFail_(props, stage) {
+  if (props.getProperty('P2F_TEST_MODE') === '예' && props.getProperty('P2F_TEST_FAIL_AT') === stage) {
+    props.deleteProperty('P2F_TEST_FAIL_AT');
+    throw new Error('P2F 주입 실패: ' + stage);
+  }
+}
+
+function P2F_testControl(payload) {
+  payload = payload || {};
+  PB1F_ss_();
+  var props = PropertiesService.getScriptProperties();
+  if (payload.enabled === true) props.setProperty('P2F_TEST_MODE', '예');
+  else props.deleteProperty('P2F_TEST_MODE');
+  if (payload.failAt) props.setProperty('P2F_TEST_FAIL_AT', String(payload.failAt));
+  else props.deleteProperty('P2F_TEST_FAIL_AT');
+  return { ok: true, enabled: props.getProperty('P2F_TEST_MODE') === '예',
+    failAt: props.getProperty('P2F_TEST_FAIL_AT') || '' };
+}
+
+function P2F_testInspectRecovery(payload) {
+  payload = payload || {};
+  PB1F_ss_();
+  var setId = P2F_text_(payload.setId, 'setId', 100);
+  var props = PropertiesService.getScriptProperties();
+  var owner = PB1F_owner_();
+  var record = P2F_json_(props.getProperty(P2F_key_('SET', setId)));
+  var submission = P2F_json_(props.getProperty(P2F_key_('SUBMISSION', setId)));
+  PB1F_assertOwner_(record, owner);
+  PB1F_assertOwner_(submission, owner);
+  var answersAvailable = false;
+  try {
+    answersAvailable = P2F_loadAnswers_(props, setId, record.keys, submission.answerChunks || []).length === record.keys.length;
+  } catch (error) { answersAvailable = false; }
+  return { ok: true, setId: setId, questionCount: record.keys.length,
+    submission: { complete: submission.complete === true, hasGradeDigest: !!submission.gradeDigest,
+      gradeDigest: submission.gradeDigest || '', historyStart: submission.historyStart || null,
+      gradeStart: submission.gradeStart || null, submittedAt: submission.submittedAt || null,
+      answersAvailable: answersAvailable, answerChunkCounts: submission.answerChunks || [] } };
 }
 
 function P2F_commitGrade(payload) {
@@ -273,50 +366,73 @@ function P2F_commitGrade(payload) {
     var submission = P2F_json_(props.getProperty(submissionKey));
     PB1F_assertOwner_(record, owner);
     PB1F_assertOwner_(submission, owner);
-    var evaluations = P2F_evaluations_(payload, record);
+    var ss = PB1F_ss_();
+    var sheets = P2F_assertSheets_(ss);
+    var settings = ss.getSheetByName('설정');
+    if (!settings) throw new Error('필수 시트 없음: 설정');
+    var allowed = { reviewTypes: P2F_allowed_(settings, 'P5:P9'),
+      errorTypes: P2F_allowed_(settings, 'Q5:Q17'), checkTypes: P2F_allowed_(settings, 'R5:R18') };
+    var evaluations = P2F_evaluations_(payload, record, allowed);
     var digest = PB1F_hash_(JSON.stringify(evaluations));
     if (submission.gradeDigest && submission.gradeDigest !== digest) throw new Error('서로 다른 평가 재확정 거부');
     if (submission.complete) return { ok: true, setId: setId, replayed: true,
       results: evaluations, timingMs: { total: Date.now() - started } };
-    var ss = PB1F_ss_();
-    var sheets = P2F_assertSheets_(ss);
     if (!submission.historyStart || !submission.gradeStart) {
       submission.historyStart = Number(sheets[P2F.BRIDGE].getRange('B12').getValue());
       submission.gradeStart = Number(sheets[P2F.BRIDGE].getRange('B13').getValue());
       submission.gradeDigest = digest;
       props.setProperty(submissionKey, JSON.stringify(submission));
     }
+    P2F_testFail_(props, 'afterReservation');
     var count = record.keys.length;
     if (!Number.isInteger(submission.historyStart) || !Number.isInteger(submission.gradeStart)) throw new Error('기록 다음 행 불명');
     PB1F_ensureRows_(sheets[P2F.HISTORY], submission.historyStart + count - 1);
     PB1F_ensureRows_(sheets[P2F.GRADES], submission.gradeStart + count - 1);
     var historyExisting = sheets[P2F.HISTORY].getRange(submission.historyStart, 1, count, 12).getValues();
     var gradeExisting = sheets[P2F.GRADES].getRange(submission.gradeStart, 1, count, 26).getValues();
-    var now = new Date();
+    if (!submission.submittedAt) {
+      var existingDates = historyExisting.map(function (row) { return row[2]; })
+        .filter(function (value) { return !P2F_isBlank_(value); })
+        .map(function (value) { return value instanceof Date ? value.getTime() : Number(value); });
+      if (existingDates.some(function (value) { return !Number.isFinite(value) || value !== existingDates[0]; })) {
+        throw new Error('부분 기록의 실제 풀이일 충돌');
+      }
+      submission.submittedAt = existingDates.length ? existingDates[0] : Date.now();
+      props.setProperty(submissionKey, JSON.stringify(submission));
+    }
+    var now = new Date(submission.submittedAt);
     var answerMap = {};
     P2F_loadAnswers_(props, setId, record.keys, submission.answerChunks || [])
       .forEach(function (item) { answerMap[item.key] = item.text; });
-    if (historyExisting.every(function (row) { return !row.some(String); })) {
-      sheets[P2F.HISTORY].getRange(submission.historyStart, 1, count, 12).setValues(evaluations.map(function (ev) {
-        return [ev.key, setId, now, answerMap[ev.key], '채점완료', ev.awardedPoints, ev.maxPoints,
-          ev.correction, '', ev.errorType, '2차 사례형', ''];
-      }));
-    } else if (historyExisting.some(function (row, i) { return String(row[0]) !== evaluations[i].key || String(row[1]) !== setId; })) {
-      throw new Error('풀이이력 복구 위치 충돌');
-    }
-    if (gradeExisting.every(function (row) { return !row[0] && !row[1] && !row[2]; })) {
-      var answerIds = evaluations.map(function () { return 'ANS-' + Utilities.getUuid(); });
-      sheets[P2F.GRADES].getRange(submission.gradeStart, 1, count, 6).setValues(evaluations.map(function (ev, i) {
-        return [answerIds[i], setId, ev.key, now, ev.maxPoints, ev.awardedPoints];
-      }));
-      sheets[P2F.GRADES].getRange(submission.gradeStart, 8, count, 7)
-        .setValues(evaluations.map(function (ev) { return ev.seven; }));
-      sheets[P2F.GRADES].getRange(submission.gradeStart, 18, count, 6).setValues(evaluations.map(function (ev) {
-        return [ev.errorType, ev.missingOutline, ev.wrongLaw, ev.applicationFix, ev.modelDifference, ev.nextReview];
-      }));
-    } else if (gradeExisting.some(function (row, i) { return String(row[1]) !== setId || String(row[2]) !== evaluations[i].key; })) {
-      throw new Error('서술형채점 복구 위치 충돌');
-    }
+    var setRows = sheets[P2F.SETS].getRange(record.startRow, 1, count, 7).getValues();
+    var historyExpected = evaluations.map(function (ev, i) {
+      return [ev.key, setId, now, answerMap[ev.key], '채점완료', ev.awardedPoints, ev.maxPoints,
+        '아니오', setRows[i][6], ev.errorType, ev.checkType, ''];
+    });
+    var answerIds = evaluations.map(function (ev, i) {
+      return gradeExisting[i][0] || ('ANS-' + Utilities.getUuid());
+    });
+    var gradeExpected = evaluations.map(function (ev, i) {
+      return [answerIds[i], setId, ev.key, now, ev.maxPoints, ev.awardedPoints, '',
+        ev.seven[0], ev.seven[1], ev.seven[2], ev.seven[3], ev.seven[4], ev.seven[5], ev.seven[6],
+        '', '', '', ev.errorType, ev.missingOutline, ev.wrongLaw, ev.applicationFix,
+        ev.modelDifference, ev.nextReview, '', '', ''];
+    });
+    var historyIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    var gradeIndexes = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21, 22];
+    var historyRuns = [], gradeRuns = [];
+    historyExisting.forEach(function (row, i) {
+      historyRuns = historyRuns.concat(P2F_planRow_(submission.historyStart + i, row,
+        historyExpected[i], historyIndexes, '풀이이력'));
+    });
+    gradeExisting.forEach(function (row, i) {
+      gradeRuns = gradeRuns.concat(P2F_planRow_(submission.gradeStart + i, row,
+        gradeExpected[i], gradeIndexes, '서술형채점'));
+    });
+    P2F_applyRuns_(sheets[P2F.HISTORY], historyRuns);
+    P2F_testFail_(props, 'afterHistory');
+    P2F_applyRuns_(sheets[P2F.GRADES], gradeRuns);
+    P2F_testFail_(props, 'afterGrades');
     SpreadsheetApp.flush();
     var hCheck = sheets[P2F.HISTORY].getRange(submission.historyStart, 1, count, 12).getValues();
     var gCheck = sheets[P2F.GRADES].getRange(submission.gradeStart, 1, count, 24).getValues();
@@ -326,10 +442,13 @@ function P2F_commitGrade(payload) {
       }
     });
     gCheck.forEach(function (row, i) {
-      if (String(row[1]) !== setId || String(row[2]) !== evaluations[i].key || Number(row[5]) !== evaluations[i].awardedPoints) {
+      if (String(row[1]) !== setId || String(row[2]) !== evaluations[i].key || Number(row[5]) !== evaluations[i].awardedPoints ||
+          row.slice(7, 14).some(function (value, j) { return Number(value) !== evaluations[i].seven[j]; }) ||
+          String(row[17]) !== evaluations[i].errorType || String(row[22]) !== evaluations[i].nextReview) {
         throw new Error('2차 평가 기록 검증 실패');
       }
     });
+    P2F_testFail_(props, 'beforeSubmitted');
     sheets[P2F.SETS].getRange(record.startRow, 6, count, 1).setValue('예');
     SpreadsheetApp.flush();
     var submitted = sheets[P2F.SETS].getRange(record.startRow, 6, count, 1).getDisplayValues();
