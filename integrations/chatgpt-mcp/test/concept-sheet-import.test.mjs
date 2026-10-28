@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { fetchConceptQuestionRows, importConceptQuestionRows, parseConceptQuestionRows } from "../db/import-concept-sheet-questions.mjs";
+import { POST as importRoute } from "../app/api/maintenance/import-concept-sheet-questions/route.js";
+
+test("concept import route rejects unauthenticated requests before source access", async () => {
+  const response = await importRoute(new Request("https://example.invalid/api/maintenance/import-concept-sheet-questions", { method: "POST" }));
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
+});
 
 const header = ["질문ID", "단원ID", "권", "원문 페이지", "회상 단계", "질문 (정답 없음)",
   "연계 문제 안정키", "생성 근거", "질문 검증·운영 규칙"];
