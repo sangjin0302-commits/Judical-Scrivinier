@@ -32,6 +32,41 @@ function PB1F_normalizeAnswer_(value) {
   return answer;
 }
 
+function PB1F_hash_(value) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, String(value))).replace(/=+$/, '');
+}
+
+function PB1F_owner_() {
+  var owner = String(Session.getTemporaryActiveUserKey() || '').trim();
+  if (!owner) throw new Error('사용자 식별 불가');
+  return owner;
+}
+
+function PB1F_propertyKey_(kind, value) {
+  return 'PB1F_' + kind + '_' + PB1F_hash_(value).slice(0, 32);
+}
+
+function PB1F_parseProperty_(value) {
+  if (!value) return null;
+  try { return JSON.parse(value); } catch (error) { throw new Error('PB1F 상태 속성 손상'); }
+}
+
+function PB1F_assertOwner_(record, owner) {
+  if (!record || record.owner !== owner) throw new Error('다른 사용자의 세트 접근 차단');
+}
+
+function PB1F_answerDigest_(answers) {
+  return PB1F_hash_(answers.join('|'));
+}
+
+function PB1F_assertBlankTarget_(sheet, row, count, width) {
+  var values = sheet.getRange(row, 1, count, width).getDisplayValues();
+  if (values.some(function (item) { return item.some(function (cell) { return String(cell).trim(); }); })) {
+    throw new Error('다음 행 포인터가 기존 기록을 가리킴');
+  }
+}
+
 function PB1F_freshSeed_(previous) {
   var bytes = Utilities.computeDigest(
     Utilities.DigestAlgorithm.SHA_256,
@@ -117,19 +152,24 @@ function PB1F_issue(payload) {
   payload = payload || {};
   var started = Date.now();
   var requestId = String(payload.requestId || '').trim();
-  if (!requestId) throw new Error('requestId 필요');
+  if (!requestId || requestId.length > 200) throw new Error('유효한 requestId 필요');
   var lock = LockService.getScriptLock();
   lock.waitLock(PB1F.LOCK_MS);
   try {
     var props = PropertiesService.getScriptProperties();
-    var retrySetId = props.getProperty('PB1F_ISSUE_' + requestId);
+    var owner = PB1F_owner_();
+    var issueKey = PB1F_propertyKey_('ISSUE', owner + ':' + requestId);
+    var pendingKey = PB1F_propertyKey_('PENDING', owner + ':' + requestId);
+    var completed = PB1F_parseProperty_(props.getProperty(issueKey));
     var ss = PB1F_ss_();
-    if (retrySetId) {
-      try {
-        return PB1F_reloadSet_(ss, retrySetId, started, true);
-      } catch (retryError) {
-        props.deleteProperty('PB1F_ISSUE_' + requestId);
-      }
+    if (completed) {
+      PB1F_assertOwner_(completed, owner);
+      return PB1F_reloadSet_(ss, completed, started, true);
+    }
+    var pending = PB1F_parseProperty_(props.getProperty(pendingKey));
+    if (pending) {
+      PB1F_assertOwner_(pending, owner);
+      return PB1F_resumeIssue_(ss, props, issueKey, pendingKey, pending, started);
     }
 
     var bridge = ss.getSheetByName(PB1F.BRIDGE);
@@ -149,7 +189,8 @@ function PB1F_issue(payload) {
     });
     var selected = PB1F_selectedRows_(bridge, picks);
     var setId = PB1F_setId_(ss, setSheet);
-    props.setProperty('PB1F_ISSUE_' + requestId, setId);
+    pending = { setId: setId, owner: owner, seed: baseSeed, picks: picks };
+    props.setProperty(pendingKey, JSON.stringify(pending));
     var now = new Date();
     var rows = picks.map(function (pick, index) {
       return [setId, now, index + 1, pick.key, '아니오', '아니오', selected[index][8]];
@@ -158,6 +199,8 @@ function PB1F_issue(payload) {
     if (!Number.isInteger(startRow) || startRow < PB1F.FIRST_DATA_ROW) {
       throw new Error('세트관리 다음 행 불명');
     }
+    PB1F_ensureRows_(setSheet, startRow + rows.length - 1);
+    PB1F_assertBlankTarget_(setSheet, startRow, rows.length, 7);
     setSheet.getRange(startRow, 1, rows.length, 7).setValues(rows);
     SpreadsheetApp.flush();
     var check = setSheet.getRange(startRow, 1, rows.length, 7).getValues();
@@ -168,10 +211,70 @@ function PB1F_issue(payload) {
     });
     setSheet.getRange(startRow, 5, rows.length, 1).setValue('예');
     SpreadsheetApp.flush();
+    var published = setSheet.getRange(startRow, 1, rows.length, 7).getValues();
+    PB1F_validateSetRows_(published, pending, true, true);
+    props.setProperty(issueKey, JSON.stringify(pending));
+    props.setProperty(PB1F_propertyKey_('SET', setId), JSON.stringify(pending));
+    props.deleteProperty(pendingKey);
     return PB1F_present_(setId, picks, selected, baseSeed, started, false);
   } finally {
     lock.releaseLock();
   }
+}
+
+function PB1F_validateSetRows_(rows, record, requirePublished, requireUnsubmitted) {
+  if (rows.length !== record.picks.length) throw new Error('세트 행 수 검증 실패');
+  rows.forEach(function (row, index) {
+    if (String(row[0]) !== record.setId || Number(row[2]) !== index + 1 ||
+        String(row[3]).trim() !== record.picks[index].key ||
+        (requirePublished && String(row[4]).trim() !== '예') ||
+        (requireUnsubmitted && String(row[5]).trim() !== '아니오')) {
+      throw new Error('세트 상태 검증 실패');
+    }
+  });
+}
+
+function PB1F_findSetRows_(setSheet, setId) {
+  if (setSheet.getLastRow() < PB1F.FIRST_DATA_ROW) return [];
+  return setSheet.getRange(PB1F.FIRST_DATA_ROW, 1,
+    setSheet.getLastRow() - PB1F.FIRST_DATA_ROW + 1, 7).getValues()
+    .filter(function (row) { return String(row[0]) === setId; })
+    .sort(function (a, b) { return Number(a[2]) - Number(b[2]); });
+}
+
+function PB1F_resumeIssue_(ss, props, issueKey, pendingKey, pending, started) {
+  var setSheet = ss.getSheetByName(PB1F.SETS);
+  var bridge = ss.getSheetByName(PB1F.BRIDGE);
+  if (!setSheet || !bridge) throw new Error('필수 시트 없음');
+  var rows = PB1F_findSetRows_(setSheet, pending.setId);
+  if (!rows.length) {
+    var selected = PB1F_selectedRows_(bridge, pending.picks);
+    var startRow = Number(bridge.getRange('B11').getValue());
+    if (!Number.isInteger(startRow) || startRow < PB1F.FIRST_DATA_ROW) throw new Error('세트관리 다음 행 불명');
+    var now = new Date();
+    PB1F_ensureRows_(setSheet, startRow + pending.picks.length - 1);
+    PB1F_assertBlankTarget_(setSheet, startRow, pending.picks.length, 7);
+    setSheet.getRange(startRow, 1, pending.picks.length, 7).setValues(
+      pending.picks.map(function (pick, index) {
+        return [pending.setId, now, index + 1, pick.key, '아니오', '아니오', selected[index][8]];
+      }));
+    SpreadsheetApp.flush();
+    rows = PB1F_findSetRows_(setSheet, pending.setId);
+  }
+  PB1F_validateSetRows_(rows, pending, false, true);
+  var matches = setSheet.createTextFinder(pending.setId).matchEntireCell(true).findAll()
+    .filter(function (range) { return range.getColumn() === 1; })
+    .map(function (range) { return range.getRow(); }).sort(function (a, b) { return a - b; });
+  if (matches.length !== pending.picks.length || matches.some(function (row, index) {
+    return row !== matches[0] + index;
+  })) throw new Error('보류 세트 위치 확인 실패');
+  setSheet.getRange(matches[0], 5, pending.picks.length, 1).setValue('예');
+  SpreadsheetApp.flush();
+  PB1F_validateSetRows_(PB1F_findSetRows_(setSheet, pending.setId), pending, true, true);
+  props.setProperty(issueKey, JSON.stringify(pending));
+  props.setProperty(PB1F_propertyKey_('SET', pending.setId), JSON.stringify(pending));
+  props.deleteProperty(pendingKey);
+  return PB1F_reloadSet_(ss, pending, started, true);
 }
 
 function PB1F_present_(setId, picks, selected, seed, started, replayed) {
@@ -189,17 +292,15 @@ function PB1F_present_(setId, picks, selected, seed, started, replayed) {
   };
 }
 
-function PB1F_reloadSet_(ss, setId, started, replayed) {
+function PB1F_reloadSet_(ss, record, started, replayed) {
   var setSheet = ss.getSheetByName(PB1F.SETS);
   var bridge = ss.getSheetByName(PB1F.BRIDGE);
-  var values = setSheet.getRange(PB1F.FIRST_DATA_ROW, 1,
-    Math.max(setSheet.getLastRow() - PB1F.FIRST_DATA_ROW + 1, 1), 7).getValues()
-    .filter(function (row) { return String(row[0]) === setId; })
-    .sort(function (a, b) { return Number(a[2]) - Number(b[2]); });
+  var values = PB1F_findSetRows_(setSheet, record.setId);
   if (!values.length) throw new Error('재시도 세트 없음');
-  var picks = values.map(function (row) { return { area: '', key: String(row[3]) }; });
+  PB1F_validateSetRows_(values, record, true, false);
+  var picks = record.picks;
   var selected = PB1F_selectedRows_(bridge, picks);
-  return PB1F_present_(setId, picks, selected, '', started, replayed);
+  return PB1F_present_(record.setId, picks, selected, record.seed, started, replayed);
 }
 
 function PB1F_rowsForSet_(sheet, setId, width) {
@@ -223,6 +324,16 @@ function PB1F_grade(payload) {
   lock.waitLock(PB1F.LOCK_MS);
   try {
     var ss = PB1F_ss_();
+    var props = PropertiesService.getScriptProperties();
+    var owner = PB1F_owner_();
+    var setRecord = PB1F_parseProperty_(props.getProperty(PB1F_propertyKey_('SET', setId)));
+    PB1F_assertOwner_(setRecord, owner);
+    var submissionKey = PB1F_propertyKey_('SUBMISSION', setId);
+    var digest = PB1F_answerDigest_(answers);
+    var reserved = PB1F_parseProperty_(props.getProperty(submissionKey));
+    if (reserved && (reserved.owner !== owner || reserved.digest !== digest)) {
+      throw new Error('서로 다른 답안 재제출 거부');
+    }
     var setSheet = ss.getSheetByName(PB1F.SETS);
     var bridge = ss.getSheetByName(PB1F.BRIDGE);
     var ox = ss.getSheetByName(PB1F.ANSWERS);
@@ -238,6 +349,7 @@ function PB1F_grade(payload) {
     });
     indexed.sort(function (a, b) { return Number(a.row[2]) - Number(b.row[2]); });
     if (!indexed.length || indexed.length !== answers.length) throw new Error('답안 수 불일치');
+    PB1F_validateSetRows_(indexed.map(function (item) { return item.row; }), setRecord, true, false);
     var keys = indexed.map(function (item) { return String(item.row[3]); });
     if (new Set(keys).size !== keys.length) throw new Error('세트 안정키 중복');
 
@@ -255,6 +367,8 @@ function PB1F_grade(payload) {
       return { key: key, no: index + 1, answer: answers[index], correct: correct,
         score: answers[index] === correct ? 1 : 0, source: row[4], sourceTime: row[5] || indexed[index].row[6] };
     });
+
+    if (!reserved) props.setProperty(submissionKey, JSON.stringify({ owner: owner, digest: digest }));
 
     var oxExisting = PB1F_rowsForSet_(ox, setId, 7);
     var historyExisting = history.getLastRow() < PB1F.FIRST_DATA_ROW ? [] :
@@ -287,12 +401,14 @@ function PB1F_grade(payload) {
       var oxStart = Number(bridge.getRange('B12').getValue());
       if (!Number.isInteger(oxStart) || oxStart < PB1F.FIRST_DATA_ROW) throw new Error('OX 다음 행 불명');
       PB1F_ensureRows_(ox, oxStart + missingOx.length - 1);
+      PB1F_assertBlankTarget_(ox, oxStart, missingOx.length, 7);
       ox.getRange(oxStart, 1, missingOx.length, 7).setValues(missingOx);
     }
     if (missingHistory.length) {
       var historyStart = Number(bridge.getRange('B13').getValue());
       if (!Number.isInteger(historyStart) || historyStart < PB1F.FIRST_DATA_ROW) throw new Error('풀이이력 다음 행 불명');
       PB1F_ensureRows_(history, historyStart + missingHistory.length - 1);
+      PB1F_assertBlankTarget_(history, historyStart, missingHistory.length, 12);
       history.getRange(historyStart, 1, missingHistory.length, 12).setValues(missingHistory);
     }
     SpreadsheetApp.flush();

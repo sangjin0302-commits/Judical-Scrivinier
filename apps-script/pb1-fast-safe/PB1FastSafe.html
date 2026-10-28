@@ -11,11 +11,11 @@ button{min-height:44px;border:0;border-radius:10px;padding:10px 16px;font-weight
 <button id="issue">10문제 출제</button><div id="status" aria-live="polite"></div>
 <main id="questions"></main><button id="submit" class="hidden">답안 제출·채점</button>
 <script>
-let current=null,answers=[];const $=s=>document.querySelector(s);
-function busy(on,msg){$('#issue').disabled=on;$('#submit').disabled=on;$('#status').textContent=msg||'';}
-function requestId(){return 'ui-'+Date.now()+'-'+Math.random().toString(36).slice(2);}
+let current=null,answers=[],pendingRequestId=sessionStorage.getItem('pb1fPendingRequestId')||'';const $=s=>document.querySelector(s);
+function busy(on,msg){$('#issue').disabled=on;$('#submit').disabled=on;$('#status').className='';$('#status').textContent=msg||'';}
+function requestId(){if(!pendingRequestId){pendingRequestId='ui-'+Date.now()+'-'+Math.random().toString(36).slice(2);sessionStorage.setItem('pb1fPendingRequestId',pendingRequestId);}return pendingRequestId;}
 $('#issue').onclick=()=>{busy(true,'출제 중…');google.script.run.withSuccessHandler(show).withFailureHandler(fail).PB1F_issue({requestId:requestId()});};
-function show(data){current=data;answers=Array(data.count).fill('');$('#questions').innerHTML=data.questions.map((q,i)=>`<section class="card"><div class="meta">${q.no}. ${escapeHtml(q.area||q.category||'')}</div><h2>${escapeHtml(q.name||'')}</h2><div class="question">${escapeHtml(q.question)}</div><div class="choices"><button data-i="${i}" data-a="O">O</button><button data-i="${i}" data-a="X">X</button></div></section>`).join('');document.querySelectorAll('.choices button').forEach(b=>b.onclick=choose);$('#submit').classList.remove('hidden');busy(false,`출제 완료 ${data.timingMs.total}ms`);}
+function show(data){sessionStorage.removeItem('pb1fPendingRequestId');pendingRequestId='';current=data;answers=Array(data.count).fill('');$('#questions').innerHTML=data.questions.map((q,i)=>`<section class="card"><div class="meta">${q.no}. ${escapeHtml(q.area||q.category||'')}</div><h2>${escapeHtml(q.name||'')}</h2><div class="question">${escapeHtml(q.question)}</div><div class="choices"><button data-i="${i}" data-a="O">O</button><button data-i="${i}" data-a="X">X</button></div></section>`).join('');document.querySelectorAll('.choices button').forEach(b=>b.onclick=choose);$('#submit').classList.remove('hidden');busy(false,`출제 완료 ${data.timingMs.total}ms`);}
 function choose(e){const b=e.currentTarget,i=+b.dataset.i;answers[i]=b.dataset.a;b.parentNode.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));}
 $('#submit').onclick=()=>{if(answers.some(x=>!x))return fail({message:'모든 문항에 답하세요.'});busy(true,'채점·기록 중…');google.script.run.withSuccessHandler(done).withFailureHandler(fail).PB1F_grade({setId:current.setId,answers});};
 function done(data){busy(false,`채점 완료 ${data.score}/${data.count} · ${data.timingMs.total}ms`);$('#submit').classList.add('hidden');}
