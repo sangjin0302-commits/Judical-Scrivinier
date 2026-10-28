@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authConfig, createWorkOSVerifier } from "../../auth.mjs";
 import { callTool } from "../../server.mjs";
 import { verifyGoogleDocsParity } from "../../db/verify-google-docs-parity-readonly.mjs";
+import { importConceptSheetQuestions } from "../../db/import-concept-sheet-questions.mjs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -152,6 +153,22 @@ const baseHandler = createMcpHandler(
           return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false };
         } catch {
           return { content: [{ type: "text", text: "Docs parity verification failed" }], isError: true };
+        }
+      },
+    );
+
+    server.registerTool(
+      "importCivilConceptQuestionTemplates",
+      { title: "민법 개념 720질문 템플릿 이관",
+        description: "기존 개념 시트를 읽기 전용으로 검증한 뒤 테스트 PostgreSQL의 빈 질문 699개만 이관합니다. 기존 원문 연결 21개와 학습이력은 보존합니다.",
+        inputSchema: z.object({}),
+        annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async () => {
+        try {
+          const result = await importConceptSheetQuestions();
+          return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false };
+        } catch {
+          return { content: [{ type: "text", text: "Concept question import failed" }], isError: true };
         }
       },
     );

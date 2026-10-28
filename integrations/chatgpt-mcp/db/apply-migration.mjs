@@ -9,6 +9,7 @@ import { postgresConnectionOptions } from "./pg-connection.mjs";
 const ALLOWED = new Set([
   "0003_concept_learning.sql",
   "0004_google_docs_sync.sql",
+  "0005_concept_sheet_questions.sql",
 ]);
 
 function migrationBody(source) {
