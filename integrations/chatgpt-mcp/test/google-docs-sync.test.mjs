@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  applyApprovedSyncCandidate,
   classifyDocumentSnapshot,
   fetchGoogleDocReadOnly,
   normalizeDocumentSnapshot,
@@ -41,6 +42,10 @@ test("snapshot validation keeps grading content out and requires paired key gene
     documentId: "doc-1", title: "민법", revisionId: "r2", parserVersion: "parser-1",
     contentDigest: "not-a-digest", problems: [problem()],
   }), /SHA-256 digest/);
+  assert.throws(() => normalizeDocumentSnapshot({
+    documentId: "doc-1", sourceId: "SRC-CIV-OTHER", title: "민법", revisionId: "r2",
+    parserVersion: "parser-1", contentDigest: "c".repeat(64), problems: [problem()],
+  }), /sourceId and stable keys/);
 });
 
 test("detector separates new, modified, unchanged, duplicate, and deletion candidate", () => {
@@ -80,6 +85,31 @@ test("detector separates new, modified, unchanged, duplicate, and deletion candi
   assert.equal(byKind.DELETE_CANDIDATE.length, 1);
   assert.equal(byKind.DUPLICATE[0].stableKey, null);
   assert.deepEqual(byKind.DUPLICATE[0].payload.sourceLocators, ["dup-1", "dup-2"]);
+  assert.equal(byKind.MODIFIED[0].payload.baseVersionId, "v-modified");
+});
+
+test("stale approved candidate cannot replace a newer problem version", async () => {
+  const statements = [];
+  const client = {
+    async query(sql) {
+      statements.push(sql);
+      if (sql === "BEGIN" || sql === "ROLLBACK") return { rowCount: 0, rows: [] };
+      if (sql.includes("FROM sync_candidates c")) return { rowCount: 1, rows: [{
+        state: "APPROVED", candidate_kind: "MODIFIED", stable_key: "K1",
+        candidate_payload: { baseVersionId: "old-version" },
+      }] };
+      if (sql.includes("FROM problems") && sql.includes("FOR UPDATE")) {
+        return { rowCount: 1, rows: [{ current_problem_version_id: "new-version" }] };
+      }
+      throw new Error("unexpected query");
+    },
+    release() {},
+  };
+  await assert.rejects(() => applyApprovedSyncCandidate({ connect: async () => client }, {
+    candidateId: "candidate-1", actorId: "maintainer",
+  }), /stale sync candidate rejected/);
+  assert.equal(statements.at(-1), "ROLLBACK");
+  assert.equal(statements.some((sql) => sql.includes("UPDATE problems")), false);
 });
 
 test("answer-only change is independently marked for grading approval", () => {

@@ -142,6 +142,15 @@ const baseHandler = createMcpHandler(
     );
 
     server.registerTool(
+      "recordCivilStudyActivity",
+      { title: "민법 학습 활동 기록", description: "사용자가 직접 확인한 강의 청취·기본서 독서·즉시 이해를 분리해 기록합니다. 회상 성공이나 공식 점수로 처리하지 않습니다.",
+        inputSchema: z.object({ requestId: z.string().min(1).max(200), unitId: z.string().min(1).max(100),
+          activityType: z.enum(["LESSON_HEARD", "BOOK_READ", "IMMEDIATE_UNDERSTANDING"]), userConfirmed: z.literal(true) }),
+        annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
+      async (input, ctx) => callTool("recordCivilStudyActivity", input, { ownerId: ownerIdFromContext(ctx) }),
+    );
+
+    server.registerTool(
       "verifyCivilDocsParity",
       { title: "민법 Docs·PostgreSQL 읽기 전용 대조",
         description: "기존 Google Docs와 테스트 PostgreSQL의 안정키·문제 본문 digest 건수만 읽기 전용으로 대조합니다. 본문과 비공개 채점기준은 반환하지 않습니다.",

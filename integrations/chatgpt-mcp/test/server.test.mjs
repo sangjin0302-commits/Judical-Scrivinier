@@ -75,7 +75,7 @@ test("server exposes approved exam and concept tools", async () => {
   const response = await handleRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   assert.deepEqual(response.result.tools.map((tool) => tool.name), [
     "issueCivilP1", "gradeCivilP1", "issueCivilP2", "prepareCivilP2Grade", "commitCivilP2Grade",
-    "getCivilConceptUnit", "setCivilStudyMode", "getCivilDueReviews", "submitCivilRecall"
+    "getCivilConceptUnit", "setCivilStudyMode", "getCivilDueReviews", "submitCivilRecall", "recordCivilStudyActivity"
   ]);
 });
 

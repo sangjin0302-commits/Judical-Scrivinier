@@ -52,7 +52,43 @@ async function activeRule(client) {
     "SELECT rule_version,rule_payload FROM review_rules WHERE subject_id=$1 AND active=true",
     [SUBJECT]);
   if (result.rowCount !== 1) throw new Error("active concept review rule missing");
-  return result.rows[0];
+  const rule = result.rows[0];
+  const payload = rule.rule_payload;
+  if (!payload || !Array.isArray(payload.rememberedDays) ||
+      payload.rememberedDays.length !== 4 ||
+      payload.rememberedDays.some((day, index) => day !== [1, 7, 21, 60][index]) ||
+      payload.partialDays !== 3 || payload.relearnDays !== 1) {
+    throw new Error("active concept review rule invalid");
+  }
+  return rule;
+}
+
+async function recordStudyActivity(pool, ownerId, input) {
+  const requestId = required(input.requestId, "requestId");
+  const unitId = required(input.unitId, "unitId");
+  const activityType = required(input.activityType, "activityType");
+  if (!["LESSON_HEARD", "BOOK_READ", "IMMEDIATE_UNDERSTANDING"].includes(activityType) ||
+      input.userConfirmed !== true) throw new Error("user-confirmed study activity required");
+  const requestDigest = digest({ unitId, activityType, userConfirmed: true });
+  return transaction(pool, async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [digest([ownerId, SUBJECT, requestId])]);
+    const previous = await client.query(
+      `SELECT activity_id,request_digest FROM concept_study_activities
+        WHERE owner_id=$1 AND subject_id=$2 AND request_id=$3 FOR SHARE`,
+      [ownerId, SUBJECT, requestId]);
+    if (previous.rowCount) {
+      if (previous.rows[0].request_digest !== requestDigest) throw new Error("changed study activity rejected");
+      return { ok: true, replayed: true, activityId: previous.rows[0].activity_id, activityType };
+    }
+    const unit = await client.query(
+      "SELECT 1 FROM units WHERE subject_id=$1 AND unit_id=$2 FOR SHARE", [SUBJECT, unitId]);
+    if (unit.rowCount !== 1) throw new Error("concept unit not found");
+    const inserted = await client.query(
+      `INSERT INTO concept_study_activities(owner_id,subject_id,unit_id,request_id,activity_type,request_digest)
+       VALUES($1,$2,$3,$4,$5,$6) RETURNING activity_id`,
+      [ownerId, SUBJECT, unitId, requestId, activityType, requestDigest]);
+    return { ok: true, replayed: false, activityId: inserted.rows[0].activity_id, activityType };
+  });
 }
 
 async function getConceptUnit(pool, ownerId, input) {
@@ -72,7 +108,7 @@ async function getConceptUnit(pool, ownerId, input) {
     const mode = requestedMode || unit.rows[0].study_mode || "INTEGRATED";
     const includeConcept = mode !== "PROBLEM_ONLY";
     const includeProblems = mode !== "CONCEPT_ONLY";
-    const [materials, questions, issues, problems] = await Promise.all([
+    const [materials, questions, issues, problems, activities] = await Promise.all([
       includeConcept ? client.query(
         `SELECT material_type,source_path,source_version,content_text,verification_state
            FROM concept_material_versions WHERE subject_id=$1 AND unit_id=$2 AND active=true
@@ -89,9 +125,15 @@ async function getConceptUnit(pool, ownerId, input) {
              ON p.subject_id=l.subject_id AND p.stable_key=l.stable_key
           WHERE l.subject_id=$1 AND l.unit_id=$2 AND l.link_status='verified' AND p.published=true
           ORDER BY p.stage,p.source_order`, [SUBJECT, unitId]) : { rows: [] },
+      client.query(
+        `SELECT activity_type,count(*)::integer AS confirmation_count,max(created_at) AS last_confirmed_at
+           FROM concept_study_activities
+          WHERE owner_id=$1 AND subject_id=$2 AND unit_id=$3
+          GROUP BY activity_type ORDER BY activity_type`, [ownerId, SUBJECT, unitId]),
     ]);
     return { ok: true, mode, unit: unit.rows[0], materials: materials.rows,
-      recallQuestions: questions.rows, issues: issues.rows, linkedProblems: problems.rows };
+      recallQuestions: questions.rows, issues: issues.rows, linkedProblems: problems.rows,
+      studyActivities: activities.rows };
   } finally { client.release(); }
 }
 
@@ -217,6 +259,7 @@ export function createConceptExecutor(options = {}) {
     if (name === "setCivilStudyMode") return setStudyMode(pool, ownerId, input);
     if (name === "getCivilDueReviews") return getDueReviews(pool, ownerId, input);
     if (name === "submitCivilRecall") return submitRecall(pool, ownerId, input);
+    if (name === "recordCivilStudyActivity") return recordStudyActivity(pool, ownerId, input);
     throw new Error(`unsupported concept tool: ${name}`);
   };
 }

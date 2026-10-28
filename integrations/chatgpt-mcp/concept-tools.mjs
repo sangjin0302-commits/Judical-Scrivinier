@@ -23,11 +23,20 @@ export const CONCEPT_TOOLS = [
       memoryResult: { type: "string", enum: ["REMEMBERED", "PARTIAL", "RELEARN"] },
       evidence: { type: "object" },
     }, additionalProperties: false } },
+  { name: "recordCivilStudyActivity", title: "민법 학습 활동 기록",
+    description: "사용자가 직접 확인한 강의 청취·기본서 독서·즉시 이해를 별도 불변 이력으로 기록합니다. 회상 성공이나 공식 점수로 간주하지 않습니다.",
+    inputSchema: { type: "object", required: ["requestId", "unitId", "activityType", "userConfirmed"], properties: {
+      requestId: { type: "string", minLength: 1, maxLength: 200 },
+      unitId: { type: "string", minLength: 1, maxLength: 100 },
+      activityType: { type: "string", enum: ["LESSON_HEARD", "BOOK_READ", "IMMEDIATE_UNDERSTANDING"] },
+      userConfirmed: { type: "boolean", const: true },
+    }, additionalProperties: false } },
 ];
 
 const allowed = {
   getCivilConceptUnit: ["unitId", "mode"], setCivilStudyMode: ["mode"],
   getCivilDueReviews: ["limit"], submitCivilRecall: ["requestId", "questionId", "answerText", "memoryResult", "evidence"],
+  recordCivilStudyActivity: ["requestId", "unitId", "activityType", "userConfirmed"],
 };
 
 export function validateConceptToolInput(name, input = {}) {
@@ -51,6 +60,15 @@ export function validateConceptToolInput(name, input = {}) {
     const limit = input.limit === undefined ? 10 : Number(input.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("invalid limit");
     return { limit };
+  }
+  if (name === "recordCivilStudyActivity") {
+    const requestId = String(input.requestId || "").trim();
+    const unitId = String(input.unitId || "").trim();
+    const activityType = String(input.activityType || "").trim();
+    if (!requestId || requestId.length > 200 || !unitId || unitId.length > 100 ||
+        !["LESSON_HEARD", "BOOK_READ", "IMMEDIATE_UNDERSTANDING"].includes(activityType) ||
+        input.userConfirmed !== true) throw new Error("invalid study activity input");
+    return { requestId, unitId, activityType, userConfirmed: true };
   }
   const requestId = String(input.requestId || "").trim();
   const questionId = String(input.questionId || "").trim();

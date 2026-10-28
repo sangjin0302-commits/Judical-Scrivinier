@@ -5,14 +5,18 @@ import { dirname, resolve } from "node:path";
 
 const clientPath = resolve(process.env.GOOGLE_OAUTH_CLIENT_FILE || "private/oauth/google-desktop-client.json");
 const tokenPath = resolve(process.env.GOOGLE_OAUTH_TOKEN_FILE || "private/oauth/google-user-token.json");
-const credentials = JSON.parse(await readFile(clientPath, "utf8"));
-const client = credentials.installed || credentials.web;
-if (!client?.client_id || !client?.client_secret) throw new Error("OAuth 클라이언트 JSON 형식이 올바르지 않습니다.");
+const envClient = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+  ? { client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET }
+  : null;
+const credentials = envClient ? null : JSON.parse(await readFile(clientPath, "utf8"));
+const oauthClient = envClient || credentials.installed || credentials.web;
+if (!oauthClient?.client_id || !oauthClient?.client_secret) throw new Error("OAuth 클라이언트 JSON 형식이 올바르지 않습니다.");
 
 const state = randomBytes(24).toString("base64url");
 const scopes = [
   "https://www.googleapis.com/auth/spreadsheets",
-  "https://www.googleapis.com/auth/script.scriptapp"
+  "https://www.googleapis.com/auth/script.scriptapp",
+  "https://www.googleapis.com/auth/documents.readonly"
 ];
 
 const server = createServer(async (request, response) => {
@@ -31,8 +35,8 @@ const server = createServer(async (request, response) => {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: client.client_id,
-        client_secret: client.client_secret,
+        client_id: oauthClient.client_id,
+        client_secret: oauthClient.client_secret,
         code,
         grant_type: "authorization_code",
         redirect_uri: redirectUri
@@ -40,6 +44,10 @@ const server = createServer(async (request, response) => {
     });
     const token = await tokenResponse.json();
     if (!tokenResponse.ok || !token.refresh_token) throw new Error(`OAuth 토큰 발급 실패 (${tokenResponse.status})`);
+    const grantedScopes = new Set(String(token.scope || "").split(/\s+/).filter(Boolean));
+    if (scopes.some((scope) => !grantedScopes.has(scope))) {
+      throw new Error("필요한 Google 읽기 권한이 모두 승인되지 않았습니다.");
+    }
     await mkdir(dirname(tokenPath), { recursive: true });
     await writeFile(tokenPath, JSON.stringify({
       refresh_token: token.refresh_token,
@@ -63,11 +71,12 @@ server.listen(0, "127.0.0.1", () => {
   const redirectUri = `http://127.0.0.1:${server.address().port}/oauth2callback`;
   const authorization = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authorization.search = new URLSearchParams({
-    client_id: client.client_id,
+    client_id: oauthClient.client_id,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: scopes.join(" "),
     access_type: "offline",
+    include_granted_scopes: "true",
     prompt: "consent",
     state
   });

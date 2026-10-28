@@ -59,11 +59,17 @@ function normalizeProblem(problem) {
 
 export function normalizeDocumentSnapshot(input) {
   const problems = (input.problems || []).map(normalizeProblem);
+  const sourceId = input.sourceId ? required(input.sourceId, "sourceId") : null;
+  if (sourceId && (/[|%_]/.test(sourceId) ||
+      problems.some((problem) => !problem.stableKey.startsWith(sourceId + "|")))) {
+    throw new Error("sourceId and stable keys do not match");
+  }
   if (problems.some((problem) => !Number.isSafeInteger(problem.sourceOrder) || problem.sourceOrder < 0)) {
     throw new Error("sourceOrder must be a non-negative safe integer");
   }
   return {
     documentId: required(input.documentId, "documentId"),
+    sourceId,
     title: required(input.title, "title"),
     revisionId: required(input.revisionId, "revisionId"),
     parserVersion: required(input.parserVersion, "parserVersion"),
@@ -120,7 +126,8 @@ export function classifyDocumentSnapshot(incomingProblems, currentProblems = [],
     const comparable = ["promptDigest", "answerDigest", "explanationDigest", "sourceVersion", "stage",
       "unitId", "sourceOrder", "maxPoints", "sourceLocator"];
     const changed = comparable.some((key) => canonical(next[key]) !== canonical(prior[key]));
-    results.push(candidate(changed ? "MODIFIED" : "UNCHANGED", stableKey, next, prior));
+    results.push(candidate(changed ? "MODIFIED" : "UNCHANGED", stableKey,
+      { ...next, baseVersionId: prior.currentVersionId }, prior));
   }
   for (const prior of currentByKey.values()) {
     results.push(candidate("DELETE_CANDIDATE", prior.stableKey, {
@@ -201,8 +208,10 @@ export async function detectGoogleDocsChanges(pool, input, actorId) {
          JOIN problem_versions v ON v.version_id=p.current_problem_version_id
          LEFT JOIN problem_source_map m ON m.subject_id=p.subject_id AND m.stable_key=p.stable_key AND m.active=true
         WHERE p.subject_id=$1
-          AND (p.stable_key=ANY($2::text[]) OR m.document_id=$3)`,
-      [SUBJECT, incomingKeys, snapshot.documentId]);
+          AND (p.stable_key=ANY($2::text[]) OR m.document_id=$3
+               OR ($4::text IS NOT NULL AND p.stable_key LIKE $4))`,
+      [SUBJECT, incomingKeys, snapshot.documentId,
+        snapshot.sourceId ? snapshot.sourceId + "|%" : null]);
     const candidates = classifyDocumentSnapshot(snapshot.problems, current.rows, snapshot.documentId);
     const counts = Object.fromEntries(["NEW", "MODIFIED", "UNCHANGED", "DUPLICATE", "DELETE_CANDIDATE"]
       .map((kind) => [kind, candidates.filter((item) => item.kind === kind).length]));
@@ -278,6 +287,16 @@ export async function applyApprovedSyncCandidate(pool, input) {
     const row = candidate.rows[0];
     if (row.state === "APPLIED") return { ok: true, replayed: true, candidateId };
     if (row.candidate_kind === "DUPLICATE") throw new Error("duplicate candidate cannot be applied");
+    if (row.candidate_kind !== "NEW") {
+      const current = await client.query(
+        `SELECT current_problem_version_id FROM problems
+          WHERE subject_id=$1 AND stable_key=$2 FOR UPDATE`, [SUBJECT, row.stable_key]);
+      if (current.rowCount !== 1 ||
+          String(current.rows[0].current_problem_version_id) !==
+            String(row.candidate_payload.baseVersionId || row.candidate_payload.currentVersionId)) {
+        throw new Error("stale sync candidate rejected");
+      }
+    }
     await requireApprovals(client, row);
     const payload = row.candidate_payload;
     if (row.candidate_kind === "DELETE_CANDIDATE") {
@@ -331,11 +350,12 @@ export async function applyApprovedSyncCandidate(pool, input) {
       }
       await client.query(
         `UPDATE problems SET unit_id=$1,stage=$2,source_order=$3,source_ref=$4,source_version=$5,
-           prompt_text=$6,max_points=$7,selection_metadata=$8,content_digest=$9,current_problem_version_id=$10
+           prompt_text=$6,max_points=$7,selection_metadata=$8,content_digest=$9,current_problem_version_id=$10,
+           published=CASE WHEN $13 THEN false ELSE published END
           WHERE subject_id=$11 AND stable_key=$12`,
         [payload.unitId, payload.stage, payload.sourceOrder, `gdoc:${row.document_id}#${payload.sourceLocator}`,
           payload.sourceVersion, payload.promptText, payload.maxPoints, JSON.stringify(payload.selectionMetadata),
-          payload.promptDigest, versionId, SUBJECT, row.stable_key]);
+          payload.promptDigest, versionId, SUBJECT, row.stable_key, row.prompt_changed]);
       await client.query(
         `INSERT INTO problem_source_map(subject_id,stable_key,document_id,source_locator,current_version_id,active)
          VALUES($1,$2,$3,$4,$5,true)

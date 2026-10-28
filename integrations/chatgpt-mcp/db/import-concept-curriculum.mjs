@@ -153,11 +153,14 @@ export async function importCurriculum(client, snapshot) {
           issue.p1_requirement || null, issue.p2_requirement || null, JSON.stringify(source), digest(JSON.stringify(issue))]);
     }
     const rule = { version: "concept-recall-v1", rememberedDays: [1, 7, 21, 60], partialDays: 3, relearnDays: 1 };
-    const activeRule = await client.query("SELECT 1 FROM review_rules WHERE subject_id=$1 AND active=true", [SUBJECT]);
     await client.query(
       `INSERT INTO review_rules(subject_id,rule_version,rule_payload,rule_digest,active)
-       VALUES($1,$2,$3,$4,$5) ON CONFLICT(subject_id,rule_version) DO NOTHING`,
-      [SUBJECT, rule.version, JSON.stringify(rule), digest(JSON.stringify(rule)), activeRule.rowCount === 0]);
+       VALUES($1,$2,$3,$4,false) ON CONFLICT(subject_id,rule_version) DO NOTHING`,
+      [SUBJECT, rule.version, JSON.stringify(rule), digest(JSON.stringify(rule))]);
+    await client.query("UPDATE review_rules SET active=false WHERE subject_id=$1 AND active=true AND rule_version<>$2",
+      [SUBJECT, rule.version]);
+    await client.query("UPDATE review_rules SET active=true WHERE subject_id=$1 AND rule_version=$2 AND active=false",
+      [SUBJECT, rule.version]);
     for (const proposal of snapshot.proposals.filter((item) => item.unit_id && item.problem_stable_key)) {
       await client.query(
         `INSERT INTO concept_problem_links(subject_id,unit_id,stable_key,link_status,source_ref,source_digest)

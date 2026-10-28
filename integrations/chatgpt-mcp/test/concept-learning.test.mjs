@@ -32,10 +32,13 @@ test("review intervals follow remembered, partial, and relearn contract", () => 
   const rule = { rememberedDays: [1, 7, 21, 60], partialDays: 3, relearnDays: 1 };
   assert.equal(calculateNextReview("REMEMBERED", 0, rule, now).intervalDays, 1);
   assert.equal(calculateNextReview("REMEMBERED", 1, rule, now).intervalDays, 7);
+  assert.equal(calculateNextReview("REMEMBERED", 2, rule, now).intervalDays, 21);
+  assert.equal(calculateNextReview("REMEMBERED", 3, rule, now).intervalDays, 60);
   assert.equal(calculateNextReview("REMEMBERED", 9, rule, now).intervalDays, 60);
   assert.equal(calculateNextReview("PARTIAL", 3, rule, now).intervalDays, 3);
   assert.equal(calculateNextReview("RELEARN", 3, rule, now).intervalDays, 1);
   assert.equal(calculateNextReview("PARTIAL", 3, rule, now).rememberedCount, 0);
+  assert.equal(calculateNextReview("PARTIAL", 3, rule, now).nextReviewAt.toISOString(), "2026-10-31T00:00:00.000Z");
 });
 
 test("concept tool validation keeps modes and real recall evidence separate", () => {
@@ -48,6 +51,19 @@ test("concept tool validation keeps modes and real recall evidence separate", ()
   assert.throws(() => validateConceptToolInput("submitCivilRecall", {
     requestId: "r-1", questionId: "B1-Q1", answerText: "", memoryResult: "REMEMBERED",
   }), /invalid recall input/);
+  assert.deepEqual(validateConceptToolInput("recordCivilStudyActivity", {
+    requestId: "activity-1", unitId: "B1-P0008-0011", activityType: "BOOK_READ", userConfirmed: true,
+  }), { requestId: "activity-1", unitId: "B1-P0008-0011", activityType: "BOOK_READ", userConfirmed: true });
+  assert.throws(() => validateConceptToolInput("recordCivilStudyActivity", {
+    requestId: "activity-1", unitId: "B1-P0008-0011", activityType: "BOOK_READ", userConfirmed: false,
+  }), /invalid study activity input/);
+});
+
+test("study activity ledger keeps user confirmation separate from recall and official score", async () => {
+  const migration = await readFile(new URL("../db/migrations/0006_study_activity.sql", import.meta.url), "utf8");
+  assert.match(migration, /concept_study_activities_append_only/);
+  assert.match(migration, /USER_CONFIRMED/);
+  assert.doesNotMatch(migration, /REMEMBERED|awarded_points/);
 });
 
 test("concept schema and due query track review streak per recall question", async () => {
