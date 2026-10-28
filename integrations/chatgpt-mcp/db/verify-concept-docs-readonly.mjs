@@ -15,6 +15,9 @@ export async function verifyConceptDocs(client) {
       units: await scalar(client, "SELECT count(*) FROM units WHERE subject_id='CIVIL'"),
       recallQuestions: await scalar(client, "SELECT count(*) FROM recall_questions WHERE subject_id='CIVIL'"),
       mappedRecallQuestions: await scalar(client, "SELECT count(*) FROM recall_questions WHERE subject_id='CIVIL' AND content_state <> 'indexed-unavailable'"),
+      templateQuestions: await scalar(client, "SELECT count(*) FROM recall_questions WHERE subject_id='CIVIL' AND content_state='template-unverified'"),
+      sourceMappedQuestions: await scalar(client, "SELECT count(*) FROM recall_questions WHERE subject_id='CIVIL' AND content_state='source-mapped'"),
+      questionsWithPrompt: await scalar(client, "SELECT count(*) FROM recall_questions WHERE subject_id='CIVIL' AND prompt_text IS NOT NULL"),
       availableUnits: await scalar(client, "SELECT count(*) FROM units WHERE subject_id='CIVIL' AND content_state IN ('available','verified')"),
       conceptIssues: await scalar(client, "SELECT count(*) FROM concept_issues WHERE subject_id='CIVIL'"),
       problemVersions: await scalar(client, "SELECT count(*) FROM problem_versions WHERE subject_id='CIVIL'"),
@@ -22,12 +25,15 @@ export async function verifyConceptDocs(client) {
       unsnapshottedIssueItems: await scalar(client, "SELECT count(*) FROM issue_set_items WHERE subject_id='CIVIL' AND problem_version_id IS NULL"),
       sourceDocuments: await scalar(client, "SELECT count(*) FROM source_documents WHERE subject_id='CIVIL'"),
       syncRuns: await scalar(client, "SELECT count(*) FROM sync_runs"),
-      migrations: await scalar(client, "SELECT count(*) FROM schema_migrations WHERE migration_name IN ('0003_concept_learning.sql','0004_google_docs_sync.sql')"),
+      conceptQuestionImports: await scalar(client, "SELECT count(*) FROM concept_question_imports WHERE subject_id='CIVIL' AND question_count=720 AND imported_count=699 AND preserved_mapped_count=21"),
+      migrations: await scalar(client, "SELECT count(*) FROM schema_migrations WHERE migration_name IN ('0003_concept_learning.sql','0004_google_docs_sync.sql','0005_concept_sheet_questions.sql')"),
     };
     if (result.units !== 240 || result.recallQuestions !== 720) throw new Error("concept index count mismatch");
-    if (result.availableUnits !== 7 || result.mappedRecallQuestions !== 21) throw new Error("verified source availability mismatch");
+    if (result.availableUnits !== 7 || result.questionsWithPrompt !== 720 || result.templateQuestions !== 699 ||
+        result.sourceMappedQuestions !== 21) throw new Error("concept source availability mismatch");
     if (result.problemVersions !== 9445 || result.unsnapshottedIssueItems !== 0) throw new Error("problem snapshot mismatch");
-    if (result.migrations !== 2) throw new Error("migration ledger mismatch");
+    if (result.conceptQuestionImports !== 1) throw new Error("concept question import ledger mismatch");
+    if (result.migrations !== 3) throw new Error("migration ledger mismatch");
     await client.query("COMMIT");
     return result;
   } catch (error) {
