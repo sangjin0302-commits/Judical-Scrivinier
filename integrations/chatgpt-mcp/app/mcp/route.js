@@ -30,7 +30,9 @@ const baseHandler = createMcpHandler(
         securitySchemes: oauthSecurity,
         _meta: { securitySchemes: oauthSecurity },
       },
-      async (input) => callTool("issueCivilP1", input),
+      async (input, extra) => callTool("issueCivilP1", input, {
+        ownerId: extra?.authInfo?.extra?.userId,
+      }),
     );
 
     server.registerTool(
@@ -47,7 +49,9 @@ const baseHandler = createMcpHandler(
         securitySchemes: oauthSecurity,
         _meta: { securitySchemes: oauthSecurity },
       },
-      async (input) => callTool("gradeCivilP1", input),
+      async (input, extra) => callTool("gradeCivilP1", input, {
+        ownerId: extra?.authInfo?.extra?.userId,
+      }),
     );
 
     server.registerTool(
@@ -56,7 +60,9 @@ const baseHandler = createMcpHandler(
         inputSchema: z.object({ requestId: z.string().min(1).max(200), caseCount: z.number().int().min(1).max(20).optional(),
           mode: z.enum(["전범위", "범위지정", "취약"]).optional(), keyword: z.string().max(200).optional() }),
         annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
-      async (input) => callTool("issueCivilP2", input),
+      async (input, extra) => callTool("issueCivilP2", input, {
+        ownerId: extra?.authInfo?.extra?.userId,
+      }),
     );
 
     server.registerTool(
@@ -66,7 +72,9 @@ const baseHandler = createMcpHandler(
         inputSchema: z.object({ setId: z.string().min(1).max(100), answers: z.array(z.object({
           key: z.string().min(1).max(300), text: z.string().min(1).max(50000) })).min(1) }),
         annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
-      async (input) => callTool("prepareCivilP2Grade", input),
+      async (input, extra) => callTool("prepareCivilP2Grade", input, {
+        ownerId: extra?.authInfo?.extra?.userId,
+      }),
     );
 
     server.registerTool(
@@ -85,7 +93,9 @@ const baseHandler = createMcpHandler(
           modelDifference: z.string().max(10000).optional(), nextReview: z.string().min(1).max(1000)
         })).min(1) }), annotations: writeAnnotations, securitySchemes: oauthSecurity,
         _meta: { securitySchemes: oauthSecurity } },
-      async (input) => callTool("commitCivilP2Grade", input),
+      async (input, extra) => callTool("commitCivilP2Grade", input, {
+        ownerId: extra?.authInfo?.extra?.userId,
+      }),
     );
   },
   {

@@ -77,3 +77,18 @@ test("server exposes the approved P1 and staged P2 tools", async () => {
     "issueCivilP1", "gradeCivilP1", "issueCivilP2", "prepareCivilP2Grade", "commitCivilP2Grade"
   ]);
 });
+
+test("PostgreSQL executor receives the authenticated owner and canonical tool name", async () => {
+  let called;
+  const result = await callTool("issueCivilP1", { requestId: "db-r1" }, {
+    ownerId: "user_workos_1",
+    executor: async (...args) => {
+      called = args;
+      return { ok: true, setId: "P1-db", count: 10, questions: [] };
+    },
+  });
+  assert.equal(called[0], "issueCivilP1");
+  assert.deepEqual(called[1], { requestId: "db-r1" });
+  assert.deepEqual(called[2], { ownerId: "user_workos_1" });
+  assert.equal(result.structuredContent.setId, "P1-db");
+});

@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
+import { createPostgresExecutor } from "./db/postgres-adapter.mjs";
+
 const TOOLS = [
   {
     name: "issueCivilP1",
@@ -183,14 +185,31 @@ export async function executeAppsScript(functionName, parameters, options = {}) 
   return result;
 }
 
-export async function callTool(name, input, executor = executeAppsScript) {
+const functions = {
+  issueCivilP1: "PB1F_issue", gradeCivilP1: "PB1F_grade", issueCivilP2: "P2F_issue",
+  prepareCivilP2Grade: "P2F_prepareGrade", commitCivilP2Grade: "P2F_commitGrade"
+};
+let postgresExecutor;
+
+async function executeConfigured(name, payload, context = {}) {
+  const backend = String(process.env.MCP_DATA_BACKEND || "apps-script").trim();
+  if (backend === "postgres") {
+    postgresExecutor ||= createPostgresExecutor();
+    return postgresExecutor(name, payload, context);
+  }
+  if (backend !== "apps-script") throw new Error(`지원하지 않는 MCP_DATA_BACKEND: ${backend}`);
+  return executeAppsScript(functions[name], [payload]);
+}
+
+export async function callTool(name, input, options = {}) {
   const payload = validateToolInput(name, input);
-  const functions = {
-    issueCivilP1: "PB1F_issue", gradeCivilP1: "PB1F_grade", issueCivilP2: "P2F_issue",
-    prepareCivilP2Grade: "P2F_prepareGrade", commitCivilP2Grade: "P2F_commitGrade"
-  };
-  const functionName = functions[name];
-  const result = await executor(functionName, [payload]);
+  let result;
+  if (typeof options === "function") {
+    result = await options(functions[name], [payload]);
+  } else {
+    const executor = options.executor || executeConfigured;
+    result = await executor(name, payload, { ownerId: options.ownerId });
+  }
   return {
     content: [{ type: "text", text: JSON.stringify(result) }],
     structuredContent: result,

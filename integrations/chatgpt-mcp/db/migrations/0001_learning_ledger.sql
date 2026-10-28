@@ -25,9 +25,11 @@ CREATE TABLE problems (
   stage exam_stage NOT NULL,
   source_order bigint NOT NULL,
   source_ref text NOT NULL,
+  source_version text NOT NULL,
   prompt_text text NOT NULL,
   max_points numeric(8,2),
   published boolean NOT NULL DEFAULT false,
+  selection_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   content_digest text NOT NULL,
   PRIMARY KEY (subject_id, stable_key),
   UNIQUE (subject_id, source_order),
@@ -49,7 +51,7 @@ CREATE TABLE private_grading_keys (
 );
 
 CREATE TABLE issue_sets (
-  set_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  set_id text PRIMARY KEY,
   owner_id text NOT NULL,
   subject_id text NOT NULL REFERENCES subjects(subject_id),
   stage exam_stage NOT NULL,
@@ -63,7 +65,7 @@ CREATE TABLE issue_sets (
 );
 
 CREATE TABLE issue_set_items (
-  set_id uuid NOT NULL,
+  set_id text NOT NULL,
   subject_id text NOT NULL,
   position integer NOT NULL CHECK (position > 0),
   stable_key text NOT NULL,
@@ -75,7 +77,7 @@ CREATE TABLE issue_set_items (
 
 CREATE TABLE submissions (
   submission_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  set_id uuid NOT NULL REFERENCES issue_sets(set_id) ON DELETE RESTRICT,
+  set_id text NOT NULL,
   owner_id text NOT NULL,
   subject_id text NOT NULL REFERENCES subjects(subject_id),
   request_id text NOT NULL,
@@ -152,11 +154,52 @@ CREATE TABLE learning_events (
   FOREIGN KEY (subject_id, stable_key) REFERENCES problems(subject_id, stable_key)
 );
 
+CREATE TABLE review_rules (
+  subject_id text NOT NULL REFERENCES subjects(subject_id),
+  rule_version text NOT NULL,
+  rule_payload jsonb NOT NULL,
+  rule_digest text NOT NULL,
+  active boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (subject_id, rule_version)
+);
+
+CREATE UNIQUE INDEX review_rules_one_active_idx ON review_rules(subject_id) WHERE active;
+
+CREATE TABLE learner_progress (
+  owner_id text NOT NULL,
+  subject_id text NOT NULL,
+  unit_id text NOT NULL,
+  learning_tier text NOT NULL CHECK (learning_tier IN ('A', 'B', 'C')),
+  progress_state text NOT NULL,
+  review_due_at timestamptz,
+  rule_version text NOT NULL,
+  evidence_digest text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (owner_id, subject_id, unit_id),
+  FOREIGN KEY (subject_id, unit_id) REFERENCES units(subject_id, unit_id),
+  FOREIGN KEY (subject_id, rule_version) REFERENCES review_rules(subject_id, rule_version)
+);
+
+CREATE TABLE audit_events (
+  audit_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  actor_id text NOT NULL,
+  subject_id text,
+  action text NOT NULL,
+  aggregate_type text NOT NULL,
+  aggregate_id text NOT NULL,
+  request_id text,
+  payload_digest text NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (subject_id) REFERENCES subjects(subject_id)
+);
+
 -- DB 커밋과 Sheets 반영 사이의 유실을 막는 transactional outbox.
 CREATE TABLE sheet_outbox (
   event_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   aggregate_type text NOT NULL,
-  aggregate_id uuid NOT NULL,
+  aggregate_id text NOT NULL,
   event_type text NOT NULL,
   payload jsonb NOT NULL,
   payload_digest text NOT NULL,
@@ -196,6 +239,9 @@ CREATE TRIGGER p1_grades_append_only
   FOR EACH ROW EXECUTE FUNCTION reject_committed_record_change();
 CREATE TRIGGER p2_grades_append_only
   BEFORE UPDATE OR DELETE ON p2_grades
+  FOR EACH ROW EXECUTE FUNCTION reject_committed_record_change();
+CREATE TRIGGER audit_events_append_only
+  BEFORE UPDATE OR DELETE ON audit_events
   FOR EACH ROW EXECUTE FUNCTION reject_committed_record_change();
 
 COMMIT;

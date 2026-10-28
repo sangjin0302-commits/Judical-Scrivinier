@@ -6,20 +6,20 @@ INSERT INTO subjects(subject_id, name) VALUES ('CIVIL', '민법'), ('REGISTRATIO
 INSERT INTO units(subject_id, unit_id, title) VALUES
   ('CIVIL', 'B1-P0040-0047', '신의성실·권리남용'),
   ('REGISTRATION', 'REG-TEST-001', '격리 시험');
-INSERT INTO problems(subject_id, stable_key, unit_id, stage, source_order, source_ref,
+INSERT INTO problems(subject_id, stable_key, unit_id, stage, source_order, source_ref, source_version,
                      prompt_text, max_points, published, content_digest)
 VALUES
-  ('CIVIL', 'TEST-CIV-P1-001', 'B1-P0040-0047', 'P1', 1, 'synthetic', '합성 OX', NULL, true, 'p1'),
-  ('CIVIL', 'TEST-CIV-P2-001', 'B1-P0040-0047', 'P2', 2, 'synthetic', '합성 사례', 20, true, 'p2'),
-  ('REGISTRATION', 'TEST-REG-P1-001', 'REG-TEST-001', 'P1', 1, 'synthetic', '격리 확인', NULL, true, 'reg');
+  ('CIVIL', 'TEST-CIV-P1-001', 'B1-P0040-0047', 'P1', 1, 'synthetic', 'v1', '합성 OX', NULL, true, 'p1'),
+  ('CIVIL', 'TEST-CIV-P2-001', 'B1-P0040-0047', 'P2', 2, 'synthetic', 'v1', '합성 사례', 20, true, 'p2'),
+  ('REGISTRATION', 'TEST-REG-P1-001', 'REG-TEST-001', 'P1', 1, 'synthetic', 'v1', '격리 확인', NULL, true, 'reg');
 
 DO $contract$
 DECLARE
-  v_set uuid;
+  v_set text := 'TEST-P2-CONTRACT';
   v_submission uuid;
 BEGIN
-  INSERT INTO issue_sets(owner_id, subject_id, stage, request_id, request_digest)
-    VALUES ('user-a', 'CIVIL', 'P2', 'req-1', 'digest-1') RETURNING set_id INTO v_set;
+  INSERT INTO issue_sets(set_id, owner_id, subject_id, stage, request_id, request_digest)
+    VALUES (v_set, 'user-a', 'CIVIL', 'P2', 'req-1', 'digest-1');
   INSERT INTO issue_set_items(set_id, subject_id, position, stable_key)
     VALUES (v_set, 'CIVIL', 1, 'TEST-CIV-P2-001');
   INSERT INTO submissions(set_id, owner_id, subject_id, request_id, answer_digest)
@@ -57,7 +57,7 @@ BEGIN
   IF (SELECT count(*) FROM p2_grades WHERE submission_id=v_submission) <> 1 THEN
     RAISE EXCEPTION 'P2 grade count mismatch';
   END IF;
-  IF (SELECT count(*) FROM sheet_outbox WHERE aggregate_id=v_submission AND delivered_at IS NULL) <> 1 THEN
+  IF (SELECT count(*) FROM sheet_outbox WHERE aggregate_id=v_submission::text AND delivered_at IS NULL) <> 1 THEN
     RAISE EXCEPTION 'outbox contract mismatch';
   END IF;
 
