@@ -190,7 +190,6 @@ function PB1F_issue(payload) {
     var selected = PB1F_selectedRows_(bridge, picks);
     var setId = PB1F_setId_(ss, setSheet);
     pending = { setId: setId, owner: owner, seed: baseSeed, picks: picks };
-    props.setProperty(pendingKey, JSON.stringify(pending));
     var now = new Date();
     var rows = picks.map(function (pick, index) {
       return [setId, now, index + 1, pick.key, '아니오', '아니오', selected[index][8]];
@@ -199,6 +198,8 @@ function PB1F_issue(payload) {
     if (!Number.isInteger(startRow) || startRow < PB1F.FIRST_DATA_ROW) {
       throw new Error('세트관리 다음 행 불명');
     }
+    pending.startRow = startRow;
+    props.setProperty(pendingKey, JSON.stringify(pending));
     PB1F_ensureRows_(setSheet, startRow + rows.length - 1);
     PB1F_assertBlankTarget_(setSheet, startRow, rows.length, 7);
     setSheet.getRange(startRow, 1, rows.length, 7).setValues(rows);
@@ -274,6 +275,7 @@ function PB1F_resumeIssue_(ss, props, issueKey, pendingKey, pending, started) {
     setSheet.getRange(matches[0], 5, pending.picks.length, 1).setValue('예');
     SpreadsheetApp.flush();
   }
+  pending.startRow = matches[0];
   PB1F_validateSetRows_(PB1F_findSetRows_(setSheet, pending.setId), pending, true, true);
   props.setProperty(issueKey, JSON.stringify(pending));
   props.setProperty(PB1F_propertyKey_('SET', pending.setId), JSON.stringify(pending));
@@ -314,6 +316,55 @@ function PB1F_rowsForSet_(sheet, setId, width) {
     .filter(function (row) { return String(row[0]) === setId; });
 }
 
+function PB1F_findRecordedRows_(sheet, setId, idColumn, width) {
+  if (sheet.getLastRow() < PB1F.FIRST_DATA_ROW) return [];
+  return sheet.getRange(PB1F.FIRST_DATA_ROW, 1,
+    sheet.getLastRow() - PB1F.FIRST_DATA_ROW + 1, width).getValues()
+    .map(function (values, index) { return { values: values, row: PB1F.FIRST_DATA_ROW + index }; })
+    .filter(function (item) { return String(item.values[idColumn]) === setId; });
+}
+
+function PB1F_indexedSetRows_(setSheet, setRecord) {
+  var count = setRecord.picks.length;
+  if (Number.isInteger(setRecord.startRow) && setRecord.startRow >= PB1F.FIRST_DATA_ROW) {
+    return setSheet.getRange(setRecord.startRow, 1, count, 7).getValues()
+      .map(function (row, index) { return { row: row, sheetRow: setRecord.startRow + index }; });
+  }
+  var all = setSheet.getRange(PB1F.FIRST_DATA_ROW, 1,
+    Math.max(setSheet.getLastRow() - PB1F.FIRST_DATA_ROW + 1, 1), 7).getValues();
+  var indexed = [];
+  all.forEach(function (row, index) {
+    if (String(row[0]) === setRecord.setId) {
+      indexed.push({ row: row, sheetRow: PB1F.FIRST_DATA_ROW + index });
+    }
+  });
+  return indexed.sort(function (a, b) { return Number(a.row[2]) - Number(b.row[2]); });
+}
+
+function PB1F_contiguousRows_(start, count) {
+  var rows = [];
+  for (var i = 0; i < count; i++) rows.push(start + i);
+  return rows;
+}
+
+function PB1F_mergeRows_(existing, added) {
+  var seen = {};
+  return (existing || []).concat(added || []).filter(function (row) {
+    var key = String(row);
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+}
+
+function PB1F_readRecordedRows_(sheet, rowNumbers, width) {
+  if (!rowNumbers || !rowNumbers.length) return [];
+  var sorted = rowNumbers.slice().sort(function (a, b) { return a - b; });
+  var contiguous = sorted.every(function (row, index) { return row === sorted[0] + index; });
+  if (contiguous) return sheet.getRange(sorted[0], 1, sorted.length, width).getValues();
+  return sorted.map(function (row) { return sheet.getRange(row, 1, 1, width).getValues()[0]; });
+}
+
 function PB1F_ensureRows_(sheet, lastRow) {
   if (sheet.getMaxRows() < lastRow) sheet.insertRowsAfter(sheet.getMaxRows(), lastRow - sheet.getMaxRows());
 }
@@ -321,11 +372,19 @@ function PB1F_ensureRows_(sheet, lastRow) {
 function PB1F_grade(payload) {
   payload = payload || {};
   var started = Date.now();
+  var timing = {};
+  var stageStarted = started;
+  function mark(name) {
+    var now = Date.now();
+    timing[name] = now - stageStarted;
+    stageStarted = now;
+  }
   var setId = String(payload.setId || '').trim();
   if (!setId || !Array.isArray(payload.answers)) throw new Error('setId/answers 필요');
   var answers = payload.answers.map(PB1F_normalizeAnswer_);
   var lock = LockService.getScriptLock();
   lock.waitLock(PB1F.LOCK_MS);
+  mark('lockWait');
   try {
     var ss = PB1F_ss_();
     var props = PropertiesService.getScriptProperties();
@@ -345,21 +404,21 @@ function PB1F_grade(payload) {
     var judge = ss.getSheetByName(PB1F.JUDGE);
     if (!setSheet || !bridge || !ox || !history || !judge) throw new Error('필수 시트 없음');
 
-    var allSetRows = setSheet.getRange(PB1F.FIRST_DATA_ROW, 1,
-      Math.max(setSheet.getLastRow() - PB1F.FIRST_DATA_ROW + 1, 1), 7).getValues();
-    var indexed = [];
-    allSetRows.forEach(function (row, index) {
-      if (String(row[0]) === setId) indexed.push({ row: row, sheetRow: PB1F.FIRST_DATA_ROW + index });
-    });
-    indexed.sort(function (a, b) { return Number(a.row[2]) - Number(b.row[2]); });
+    var indexed = PB1F_indexedSetRows_(setSheet, setRecord);
     if (!indexed.length || indexed.length !== answers.length) throw new Error('답안 수 불일치');
     PB1F_validateSetRows_(indexed.map(function (item) { return item.row; }), setRecord, true, false);
     var keys = indexed.map(function (item) { return String(item.row[3]); });
     if (new Set(keys).size !== keys.length) throw new Error('세트 안정키 중복');
+    mark('setLookup');
 
     bridge.getRange('K17:K56').clearContent();
     bridge.getRange(17, 11, keys.length, 1).setValues(keys.map(function (key) { return [key]; }));
     SpreadsheetApp.flush();
+    mark('judgeSelectionFlush');
+    if (props.getProperty('PB1F_TEST_AUDIT') === '예') {
+      props.setProperty('PB1F_TEST_AUDIT_JUDGE_COUNT', String(
+        Number(props.getProperty('PB1F_TEST_AUDIT_JUDGE_COUNT') || 0) + 1));
+    }
     var keyRows = judge.getRange(5, 1, PB1F.MAX_PICK, 7).getValues();
     var keyMap = {};
     keyRows.forEach(function (row) { if (row[0]) keyMap[String(row[0])] = row; });
@@ -371,17 +430,36 @@ function PB1F_grade(payload) {
       return { key: key, no: index + 1, answer: answers[index], correct: correct,
         score: answers[index] === correct ? 1 : 0, source: row[4], sourceTime: row[5] || indexed[index].row[6] };
     });
+    mark('judgeReadAndGrade');
 
-    if (!reserved) props.setProperty(submissionKey, JSON.stringify({ owner: owner, digest: digest }));
+    var newReservation = !reserved;
+    if (newReservation) {
+      reserved = { owner: owner, digest: digest, complete: false, oxRows: [], historyRows: [] };
+      props.setProperty(submissionKey, JSON.stringify(reserved));
+    }
 
-    var oxExisting = PB1F_rowsForSet_(ox, setId, 7);
-    var historyExisting = history.getLastRow() < PB1F.FIRST_DATA_ROW ? [] :
-      history.getRange(PB1F.FIRST_DATA_ROW, 1,
-        history.getLastRow() - PB1F.FIRST_DATA_ROW + 1, 12).getValues()
+    var oxExisting = [], historyExisting = [];
+    if (newReservation) {
+      // This call persisted the reservation before any record write.
+    } else if (reserved.oxRows && reserved.oxRows.length &&
+        reserved.historyRows && reserved.historyRows.length) {
+      oxExisting = PB1F_readRecordedRows_(ox, reserved.oxRows, 7)
+        .filter(function (row) { return String(row[0]) === setId; });
+      historyExisting = PB1F_readRecordedRows_(history, reserved.historyRows, 12)
         .filter(function (row) { return String(row[1]) === setId; });
+    } else {
+      // Existing reservations without complete pointers always take the safe recovery scan.
+      var oldOx = PB1F_findRecordedRows_(ox, setId, 0, 7);
+      var oldHistory = PB1F_findRecordedRows_(history, setId, 1, 12);
+      oxExisting = oldOx.map(function (item) { return item.values; });
+      historyExisting = oldHistory.map(function (item) { return item.values; });
+      reserved.oxRows = oldOx.map(function (item) { return item.row; });
+      reserved.historyRows = oldHistory.map(function (item) { return item.row; });
+    }
     var oxByKey = {}, historyByKey = {};
     oxExisting.forEach(function (row) { oxByKey[String(row[2])] = row; });
     historyExisting.forEach(function (row) { historyByKey[String(row[0])] = row; });
+    mark('existingRecordLookup');
     var missingOx = [], missingHistory = [], now = new Date();
     graded.forEach(function (item) {
       var oldOx = oxByKey[item.key];
@@ -401,25 +479,36 @@ function PB1F_grade(payload) {
       }
     });
 
+    var oxStart = null, historyStart = null;
     if (missingOx.length) {
-      var oxStart = Number(bridge.getRange('B12').getValue());
+      oxStart = Number(bridge.getRange('B12').getValue());
       if (!Number.isInteger(oxStart) || oxStart < PB1F.FIRST_DATA_ROW) throw new Error('OX 다음 행 불명');
       PB1F_ensureRows_(ox, oxStart + missingOx.length - 1);
       PB1F_assertBlankTarget_(ox, oxStart, missingOx.length, 7);
-      ox.getRange(oxStart, 1, missingOx.length, 7).setValues(missingOx);
+      reserved.oxRows = PB1F_mergeRows_(reserved.oxRows,
+        PB1F_contiguousRows_(oxStart, missingOx.length));
     }
     if (missingHistory.length) {
-      var historyStart = Number(bridge.getRange('B13').getValue());
+      historyStart = Number(bridge.getRange('B13').getValue());
       if (!Number.isInteger(historyStart) || historyStart < PB1F.FIRST_DATA_ROW) throw new Error('풀이이력 다음 행 불명');
       PB1F_ensureRows_(history, historyStart + missingHistory.length - 1);
       PB1F_assertBlankTarget_(history, historyStart, missingHistory.length, 12);
+      reserved.historyRows = PB1F_mergeRows_(reserved.historyRows,
+        PB1F_contiguousRows_(historyStart, missingHistory.length));
+    }
+    // Persist exact target rows before either write. A crash therefore resumes by inspecting them.
+    props.setProperty(submissionKey, JSON.stringify(reserved));
+    if (missingOx.length) ox.getRange(oxStart, 1, missingOx.length, 7).setValues(missingOx);
+    if (missingHistory.length) {
       history.getRange(historyStart, 1, missingHistory.length, 12).setValues(missingHistory);
     }
+    mark('recordWrites');
     SpreadsheetApp.flush();
+    mark('recordFlush');
 
-    var finalOx = PB1F_rowsForSet_(ox, setId, 8);
-    var finalHistory = history.getRange(PB1F.FIRST_DATA_ROW, 1,
-      Math.max(history.getLastRow() - PB1F.FIRST_DATA_ROW + 1, 1), 13).getValues()
+    var finalOx = PB1F_readRecordedRows_(ox, reserved.oxRows, 8)
+      .filter(function (row) { return String(row[0]) === setId; });
+    var finalHistory = PB1F_readRecordedRows_(history, reserved.historyRows, 13)
       .filter(function (row) { return String(row[1]) === setId; });
     if (finalOx.length !== keys.length || finalHistory.length !== keys.length) {
       throw new Error('최종 기록 수 검증 실패');
@@ -434,14 +523,23 @@ function PB1F_grade(payload) {
         throw new Error('최종 기록 내용/수식 검증 실패: ' + item.key);
       }
     });
-    indexed.forEach(function (item) { setSheet.getRange(item.sheetRow, 6).setValue('예'); });
+    mark('finalRecordValidation');
+    var submittedRows = indexed.map(function (item) { return item.sheetRow; });
+    if (submittedRows.some(function (row, index) { return row !== submittedRows[0] + index; })) {
+      throw new Error('세트 행 연속성 검증 실패');
+    }
+    setSheet.getRange(submittedRows[0], 6, submittedRows.length, 1).setValue('예');
+    mark('submittedWrites');
     SpreadsheetApp.flush();
+    mark('submittedFlush');
+    reserved.complete = true;
+    props.setProperty(submissionKey, JSON.stringify(reserved));
     return { ok: true, setId: setId, count: graded.length,
       score: graded.reduce(function (sum, item) { return sum + item.score; }, 0),
       replayed: !missingOx.length && !missingHistory.length,
       results: graded.map(function (item) { return { no: item.no, answer: item.answer,
         correct: item.correct, score: item.score }; }),
-      timingMs: { total: Date.now() - started } };
+      timingMs: { total: Date.now() - started, stages: timing } };
   } finally {
     lock.releaseLock();
   }

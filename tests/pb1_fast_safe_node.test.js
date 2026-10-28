@@ -33,6 +33,19 @@ test('browser preserves the pending request id across a failed issue call', () =
   assert.match(html, /sessionStorage\.removeItem\('pb1fPendingRequestId'\)/);
 });
 
+test('grading persists bounded row pointers before writes and batches submitted state', () => {
+  const reservationWrite = source.indexOf('props.setProperty(submissionKey, JSON.stringify(reserved));',
+    source.indexOf('Persist exact target rows before either write'));
+  const oxWrite = source.indexOf('ox.getRange(oxStart', reservationWrite);
+  const historyWrite = source.indexOf('history.getRange(historyStart', reservationWrite);
+  assert.ok(reservationWrite >= 0);
+  assert.ok(oxWrite > reservationWrite);
+  assert.ok(historyWrite > reservationWrite);
+  assert.match(source, /PB1F_readRecordedRows_\(ox, reserved\.oxRows, 8\)/);
+  assert.match(source, /setSheet\.getRange\(submittedRows\[0\], 6, submittedRows\.length, 1\)\.setValue\('예'\)/);
+  assert.match(source, /Existing reservations without complete pointers always take the safe recovery scan/);
+});
+
 test('answer normalization accepts only O and X', () => {
   const context = {
     Object,
