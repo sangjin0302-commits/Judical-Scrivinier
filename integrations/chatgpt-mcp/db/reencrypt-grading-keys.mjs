@@ -82,10 +82,16 @@ async function exportSheet(sheet, startRow, columns, ceiling) {
   return rows.filter((row) => String(row?.[0] || "").trim());
 }
 
-const [problemRows, gradingRows] = await Promise.all([
+const [problemRows, gradingRows, gradingHeaderRows] = await Promise.all([
   exportSheet("문제원장", 5, 35, 20004),
   exportSheet("채점키_비공개", 5, 7, 20004),
+  exportSheet("채점키_비공개", 4, 7, 4),
 ]);
+const expectedGradingHeader = ["문제 안정키", "정답 / 핵심결론", "정답 근거",
+  "해설·채점기준(서술형: 쟁점·배점)", "정답 출처(자료ID·위치)", "기준시각", "키상태"];
+if (JSON.stringify(gradingHeaderRows[0]) !== JSON.stringify(expectedGradingHeader)) {
+  throw new Error("grading source header mismatch");
+}
 
 function uniqueMap(rows, label) {
   const map = new Map();
@@ -140,13 +146,15 @@ try {
     if (source && String(source[9] || "unknown") !== String(row.source_version)) sourceMismatches.push(row.stable_key);
     if (source && grading) {
       const sourceVersion = String(source[9] || "").trim();
-      const keyVersion = String(grading[5] || "").trim();
-      if (!sourceVersion || !keyVersion || keyVersion !== sourceVersion) {
+      const criteriaAsOf = String(grading[5] || "").trim();
+      if (!sourceVersion || !criteriaAsOf) {
         keyVersionMismatches.push(row.stable_key);
         continue;
       }
-      const payload = { answer: grading[1], rationale: grading[2], rubric: grading[3], source: grading[4], status: grading[6] };
+      const payload = { answer: grading[1], rationale: grading[2], rubric: grading[3], source: grading[4],
+        criteriaAsOf, problemSourceVersion: sourceVersion, status: grading[6] };
       const payloadText = JSON.stringify(payload);
+      const keyVersion = `criteria-${sha(payloadText).slice(0, 24)}`;
       const aad = gradingAad(row.stable_key, keyVersion);
       const encrypted = encryptJson(payload, aad);
       if (JSON.stringify(decryptJson(encrypted, aad)) !== payloadText) throw new Error("AES-GCM round-trip failed");

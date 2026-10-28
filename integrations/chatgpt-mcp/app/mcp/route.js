@@ -24,7 +24,7 @@ const baseHandler = createMcpHandler(
         description:
           "독립 테스트 문제은행에서 공식 OX 10문항을 출제하고 세트를 기록합니다. 같은 requestId 재시도는 같은 세트를 반환합니다.",
         inputSchema: z.object({
-          requestId: z.string().min(1).max(200).optional(),
+          requestId: z.string().min(1).max(200),
         }),
         annotations: writeAnnotations,
         securitySchemes: oauthSecurity,

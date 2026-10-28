@@ -15,6 +15,9 @@ const ownerPrefix = String(env.ACCEPTANCE_OWNER_PREFIX || "").trim();
 if (applySynthetic && ownerPrefix !== "acceptance-synthetic") {
   throw new Error("writes require ACCEPTANCE_OWNER_PREFIX=acceptance-synthetic");
 }
+if (applySynthetic && env.ACCEPTANCE_ISOLATED_DATABASE !== "1") {
+  throw new Error("synthetic writes are forbidden outside an explicitly isolated database");
+}
 
 const pool = createPostgresPool(env);
 

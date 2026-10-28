@@ -90,10 +90,12 @@ async function setItems(client, setId) {
 }
 
 async function issue(pool, ownerId, stage, input, configuredKeyId) {
-  const count = stage === "P1" ? 10 : input.caseCount;
+  const count = stage === "P1" ? 10 : (input.caseCount ?? 1);
   const request = { requestId: input.requestId, count, mode: input.mode || "전범위", keyword: input.keyword || "" };
   const requestDigest = digest(request);
   return inTransaction(pool, async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",
+      [`${ownerId}\u0000${SUBJECT}\u0000${stage}\u0000${input.requestId}`]);
     const previous = await client.query(
       `SELECT set_id, request_digest FROM issue_sets
        WHERE owner_id=$1 AND subject_id=$2 AND stage=$3 AND request_id=$4 FOR UPDATE`,

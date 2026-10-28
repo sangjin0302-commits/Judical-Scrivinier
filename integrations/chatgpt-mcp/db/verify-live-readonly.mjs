@@ -1,9 +1,10 @@
 import pg from "pg";
+import { postgresConnectionOptions } from "./pg-connection.mjs";
 
 const connectionString = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
 if (!connectionString) throw new Error("database URL is unavailable");
 
-const client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: true } });
+const client = new pg.Client(postgresConnectionOptions(connectionString));
 await client.connect();
 try {
   await client.query("BEGIN READ ONLY");
@@ -27,9 +28,17 @@ try {
     `SELECT column_name, data_type FROM information_schema.columns
       WHERE table_schema='public' AND table_name='problems'
         AND column_name IN ('source_version','selection_metadata') ORDER BY column_name`);
+  const gradingKeys = await client.query(
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE verification_state='verified')::int AS verified,
+            count(*) FILTER (WHERE active_for_grading)::int AS active,
+            count(*) FILTER (WHERE encryption_key_id='legacy-unknown')::int AS legacy_preserved,
+            count(DISTINCT encryption_key_id)::int AS encryption_generations
+       FROM private_grading_keys WHERE subject_id='CIVIL'`);
   await client.query("ROLLBACK");
   process.stdout.write(JSON.stringify({ ok: true, transaction: "READ ONLY", counts,
-    failedSet: failedSet.rows[0] || null, problemSchema: schema.rows }));
+    failedSet: failedSet.rows[0] || null, problemSchema: schema.rows,
+    gradingKeys: gradingKeys.rows[0] }));
 } finally {
   await client.end();
 }

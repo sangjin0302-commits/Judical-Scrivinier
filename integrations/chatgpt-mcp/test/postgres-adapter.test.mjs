@@ -11,6 +11,7 @@ test("grading key is never generated when the configured key is missing", () => 
 
 test("new issue sets snapshot exact grading key version and encryption key id", async () => {
   const itemInserts = [];
+  const advisoryLocks = [];
   const candidates = Array.from({ length: 10 }, (_, index) => ({
     stable_key: `p-${index + 1}`,
     prompt_text: `question ${index + 1}`,
@@ -23,6 +24,7 @@ test("new issue sets snapshot exact grading key version and encryption key id", 
   const client = {
     async query(sql, values = []) {
       if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rowCount: 0, rows: [] };
+      if (sql.includes("pg_advisory_xact_lock")) advisoryLocks.push(values[0]);
       if (sql.includes("FROM issue_sets") && sql.includes("request_id")) return { rowCount: 0, rows: [] };
       if (sql.includes("FROM problems p JOIN private_grading_keys")) return { rowCount: 10, rows: candidates };
       if (sql.includes("INSERT INTO issue_set_items")) itemInserts.push(values);
@@ -37,6 +39,8 @@ test("new issue sets snapshot exact grading key version and encryption key id", 
   const result = await execute("issueCivilP1", { requestId: "snapshot-1", mode: "전범위" }, { ownerId: "user-1" });
   assert.equal(result.count, 10);
   assert.equal(itemInserts.length, 10);
+  assert.equal(advisoryLocks.length, 1);
+  assert.match(advisoryLocks[0], /snapshot-1$/);
   assert.ok(itemInserts.every((values) => values[4] === "source-v1" && values[5] === "key-v2"));
 });
 
