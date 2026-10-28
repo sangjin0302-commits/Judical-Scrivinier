@@ -362,7 +362,7 @@ function PB1F_grade(payload) {
     var graded = keys.map(function (key, index) {
       var row = keyMap[key];
       if (!row) throw new Error('선택 채점키 없음: ' + key);
-      if (String(row[6]).trim() !== '정상') throw new Error('선택 채점키 상태 비정상: ' + key);
+      if (String(row[6]).trim() !== '확정') throw new Error('선택 채점키 상태 비정상: ' + key);
       var correct = PB1F_normalizeAnswer_(row[1]);
       return { key: key, no: index + 1, answer: answers[index], correct: correct,
         score: answers[index] === correct ? 1 : 0, source: row[4], sourceTime: row[5] || indexed[index].row[6] };
