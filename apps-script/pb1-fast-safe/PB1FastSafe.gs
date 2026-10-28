@@ -247,6 +247,7 @@ function PB1F_resumeIssue_(ss, props, issueKey, pendingKey, pending, started) {
   var bridge = ss.getSheetByName(PB1F.BRIDGE);
   if (!setSheet || !bridge) throw new Error('필수 시트 없음');
   var rows = PB1F_findSetRows_(setSheet, pending.setId);
+  var createdNow = false;
   if (!rows.length) {
     var selected = PB1F_selectedRows_(bridge, pending.picks);
     var startRow = Number(bridge.getRange('B11').getValue());
@@ -260,16 +261,19 @@ function PB1F_resumeIssue_(ss, props, issueKey, pendingKey, pending, started) {
       }));
     SpreadsheetApp.flush();
     rows = PB1F_findSetRows_(setSheet, pending.setId);
+    createdNow = true;
   }
-  PB1F_validateSetRows_(rows, pending, false, true);
+  PB1F_validateSetRows_(rows, pending, !createdNow, true);
   var matches = setSheet.createTextFinder(pending.setId).matchEntireCell(true).findAll()
     .filter(function (range) { return range.getColumn() === 1; })
     .map(function (range) { return range.getRow(); }).sort(function (a, b) { return a - b; });
   if (matches.length !== pending.picks.length || matches.some(function (row, index) {
     return row !== matches[0] + index;
   })) throw new Error('보류 세트 위치 확인 실패');
-  setSheet.getRange(matches[0], 5, pending.picks.length, 1).setValue('예');
-  SpreadsheetApp.flush();
+  if (createdNow) {
+    setSheet.getRange(matches[0], 5, pending.picks.length, 1).setValue('예');
+    SpreadsheetApp.flush();
+  }
   PB1F_validateSetRows_(PB1F_findSetRows_(setSheet, pending.setId), pending, true, true);
   props.setProperty(issueKey, JSON.stringify(pending));
   props.setProperty(PB1F_propertyKey_('SET', pending.setId), JSON.stringify(pending));
