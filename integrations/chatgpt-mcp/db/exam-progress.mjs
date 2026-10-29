@@ -1,4 +1,4 @@
-// Read-only, owner-scoped exam progress. Never joins private grading keys or original answers.
+// Read-only, owner-scoped exam progress. Never returns private keys or original answer text.
 const PASS_RATE = .667;
 const DAY = 86400000;
 
@@ -120,12 +120,18 @@ export async function getExamProgress(pool, { ownerId, subjectId = "CIVIL", stag
           AND e.payload->>'validState' IN ('유효','VALID')
           AND NOT EXISTS (SELECT 1 FROM native n WHERE n.stable_key=e.stable_key
             AND n.set_id=e.payload->>'setId')
+      ), prepared_original AS (
+        SELECT DISTINCT oa.stable_key FROM original_answers oa
+        JOIN submissions s ON s.submission_id=oa.submission_id
+        WHERE s.owner_id=$1 AND s.subject_id=$2 AND s.state='PREPARED'
+          AND oa.subject_id=$2 AND length(btrim(oa.answer_text))>0
       ), problem_state AS (
         SELECT p.stage,
-          CASE WHEN i.stable_key IS NOT NULL THEN 'unknown'
+          CASE WHEN i.stable_key IS NOT NULL OR pending.stable_key IS NOT NULL THEN 'unknown'
                WHEN EXISTS (SELECT 1 FROM native n WHERE n.stable_key=p.stable_key) THEN 'completed'
                ELSE 'unattempted' END AS progress_state
         FROM problems p LEFT JOIN unresolved_import i ON i.stable_key=p.stable_key
+        LEFT JOIN prepared_original pending ON pending.stable_key=p.stable_key
         WHERE p.subject_id=$2 AND p.published=true AND ($3::text IS NULL OR p.stage::text=$3)
       )
       SELECT stage,count(*)::int AS total,
@@ -138,7 +144,7 @@ export async function getExamProgress(pool, { ownerId, subjectId = "CIVIL", stag
   const overallStatus = totals.rows.some(row => Number(row.unknown) > 0) ? "partial" : "verified";
   if (!page.length) return { items: [], nextCursor: null, totals: totals.rows, overallStatus };
   const keys = page.map(p => p.stable_key);
-  const [native, imported] = await Promise.all([
+  const [native, imported, pending] = await Promise.all([
     pool.query(`SELECT s.submission_id,s.set_id,s.committed_at,g.stable_key,'P1' AS stage,g.is_correct,
       NULL::numeric AS awarded_points,NULL::numeric AS max_points,
       NULL::smallint AS issue_score,NULL::smallint AS outline_score,NULL::smallint AS law_score,
@@ -158,6 +164,11 @@ export async function getExamProgress(pool, { ownerId, subjectId = "CIVIL", stag
       FROM learning_events e JOIN problems p ON p.subject_id=e.subject_id AND p.stable_key=e.stable_key
       WHERE e.owner_id=$1 AND e.subject_id=$2 AND e.event_type='SHEET_HISTORY_IMPORTED'
       AND e.stable_key=ANY($3::text[])`, [ownerId, subjectId, keys]),
+    pool.query(`SELECT DISTINCT oa.stable_key FROM original_answers oa
+      JOIN submissions s ON s.submission_id=oa.submission_id
+      WHERE s.owner_id=$1 AND s.subject_id=$2 AND s.state='PREPARED'
+        AND oa.subject_id=$2 AND oa.stable_key=ANY($3::text[])
+        AND length(btrim(oa.answer_text))>0`, [ownerId, subjectId, keys]),
   ]);
   const byKey = new Map(keys.map(k => [k, []]));
   const nativeSets = new Map(keys.map(k => [k, new Set()]));
@@ -169,7 +180,13 @@ export async function getExamProgress(pool, { ownerId, subjectId = "CIVIL", stag
     const item = importedAttempt(row, nativeSets.get(row.stable_key) ?? new Set());
     if (item) byKey.get(row.stable_key)?.push(item);
   }
-  const items = page.map(p => summarizeExamProblem(p, byKey.get(p.stable_key), { now }));
+  const pendingKeys = new Set(pending.rows.map(row => row.stable_key));
+  const items = page.map(p => {
+    const item = summarizeExamProblem(p, byKey.get(p.stable_key), { now });
+    if (!pendingKeys.has(p.stable_key)) return item;
+    return { ...item, historyStatus: "pending_grade", mastery: "확인 필요",
+      pass: null, graduated: null, reviewDueAt: null, hasPendingOriginal: true };
+  });
   return {
     items,
     nextCursor: problems.rows.length > limit ? page.at(-1).stable_key : null,

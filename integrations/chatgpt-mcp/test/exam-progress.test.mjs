@@ -41,6 +41,7 @@ test("service scopes all reads to owner, bounds page and withholds ambiguous imp
     if(sql.startsWith("SELECT stable_key")) return {rows:[p1]};
     if(sql.startsWith("WITH native AS")) return {rows:[{stage:"P1",total:1,completed:0,unattempted:0,unknown:1}]};
     if(sql.includes("UNION ALL")) return {rows:[]};
+    if(sql.startsWith("SELECT DISTINCT oa.stable_key")) return {rows:[]};
     return {rows:[{event_id:"x",stable_key:"p1",stage:"P1",created_at:"2026-10-01T00:00:00Z",payload:{score:1,maxPoints:1,validState:"유효",setId:"old"}}]};
   }};
   const r=await getExamProgress(pool,{ownerId:"owner",limit:10});
@@ -52,8 +53,32 @@ test("service scopes all reads to owner, bounds page and withholds ambiguous imp
   assert.ok(calls.slice(1).every(c=>c.params[0]==="owner"));
   assert.match(calls[1].sql,/length\(btrim\(oa\.answer_text\)\)>0/);
   assert.match(calls[1].sql,/e\.payload->>'validState' IN \('유효','VALID'\)/);
+  assert.match(calls[1].sql,/prepared_original[\s\S]*s\.state='PREPARED'/);
   assert.match(calls.find(c=>c.sql.includes("UNION ALL")).sql,
     /EXISTS \(SELECT 1 FROM original_answers oa[\s\S]*oa\.stable_key=g\.stable_key[\s\S]*length\(btrim\(oa\.answer_text\)\)>0/);
   await assert.rejects(()=>getExamProgress(pool,{ownerId:"",limit:10}),/owner/);
   await assert.rejects(()=>getExamProgress(pool,{ownerId:"owner",limit:101}),/limit/);
+});
+
+test("ungraded PREPARED original is quarantined from unattempted and mastery", async () => {
+  const calls = [];
+  const pool = { query: async (sql, params) => {
+    calls.push({ sql, params });
+    if (sql.startsWith("SELECT stable_key")) return { rows: [p2] };
+    if (sql.startsWith("WITH native AS")) return { rows: [{ stage: "P2", total: 1,
+      completed: 0, unattempted: 0, unknown: 1 }] };
+    if (sql.includes("UNION ALL")) return { rows: [] };
+    if (sql.startsWith("SELECT DISTINCT oa.stable_key")) return { rows: [{ stable_key: "p2" }] };
+    return { rows: [] };
+  } };
+  const r = await getExamProgress(pool, { ownerId: "owner", stage: "P2", limit: 10 });
+  assert.equal(r.items[0].attempts, 0);
+  assert.equal(r.items[0].historyStatus, "pending_grade");
+  assert.equal(r.items[0].mastery, "확인 필요");
+  assert.equal(r.items[0].pass, null);
+  assert.equal(r.items[0].hasPendingOriginal, true);
+  assert.equal(r.totals[0].unknown, 1);
+  assert.equal(r.totals[0].unattempted, 0);
+  assert.equal(r.overallStatus, "partial");
+  assert.ok(calls.slice(1).every(call => call.params[0] === "owner"));
 });

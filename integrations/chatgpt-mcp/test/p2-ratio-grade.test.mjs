@@ -36,11 +36,12 @@ test("official-model element ratio uses full, partial, zero and no seven-element
   assert.equal(score.rawFraction, "25500/2000");
 });
 
-test("six answer qualities receive deterministic distinct ratio scores", () => {
+test("seven answer qualities receive deterministic ratio scores", () => {
   const cases = [
     { name: "complete", statuses: ["MATCH", "MATCH", "MATCH", "MATCH"], score: 10 },
     { name: "equivalent wording", statuses: ["ALTERNATIVE_ACCEPTED", "MATCH", "MATCH", "MATCH"], score: 10 },
     { name: "partial", statuses: ["MATCH", "PARTIAL", "MISSING", "MATCH"], score: 6.25 },
+    { name: "conclusion only", statuses: ["MISSING", "MISSING", "MISSING", "MATCH"], score: 2.5 },
     { name: "right conclusion wrong application", statuses: ["MATCH", "MATCH", "ERROR", "MATCH"], score: 7.5 },
     { name: "opposite law", statuses: ["MATCH", "ERROR", "ERROR", "ERROR"], score: 2.5 },
     { name: "no answer", statuses: ["MISSING", "MISSING", "MISSING", "MISSING"], score: 0 },
