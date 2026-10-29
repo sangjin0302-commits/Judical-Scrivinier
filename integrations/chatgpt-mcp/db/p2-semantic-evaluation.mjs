@@ -6,7 +6,7 @@ const FULL_MATCH = new Set(["MATCH", "ALTERNATIVE_ACCEPTED"]);
 
 const clean = (value) => String(value ?? "").normalize("NFC").replace(/\s+/gu, " ").trim();
 export const isNonSubstantiveP2Answer = (value) =>
-  /^(?:모르겠다|모르겠습니다|모름|잘 모르겠습니다|알 수 없습니다|i(?: do not| don't) know)[.!?]?$/iu.test(clean(value));
+  /^(?:모르겠음|모르겠다|모르겠습니다|모름|잘 모르겠습니다|알 수 없습니다|i(?: do not| don't) know)[.!?]?$/iu.test(clean(value));
 const sha256 = (value) => createHash("sha256").update(value, "utf8").digest("hex");
 
 function bounded(value, field, limit = 2000) {

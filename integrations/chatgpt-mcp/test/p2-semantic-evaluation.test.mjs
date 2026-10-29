@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildP2SemanticAudit } from "../db/p2-semantic-evaluation.mjs";
+import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "../db/p2-semantic-evaluation.mjs";
 
 const source = { modelAnswer: "청구 요건을 검토한 뒤 결론을 쓴다.",
   rubric: "청구 요건 검토와 결론에 배점한다.", originalAnswer: "청구 요건은 충족된다. 결론은 인용이다." };
@@ -56,6 +56,15 @@ test("P2 abstention cannot receive points or a matching legal element", () => {
     /cannot earn points/);
   assert.throws(() => buildP2SemanticAudit({ ...base, elements: [{ ...base.elements[0],
     answerExcerpt: "모르겠다" }] }, abstention), /cannot match elements/);
+});
+
+test("P2 abstention variants remain exact-answer only", () => {
+  for (const answer of ["모르겠음", "모르겠다.", "모르겠습니다!", "잘 모르겠습니다", "모름"]) {
+    assert.equal(isNonSubstantiveP2Answer(answer), true);
+  }
+  for (const answer of ["법리는 상대적 효력이다. 결론은 모르겠음", "모르겠습니다만 요건은 충족됩니다."]) {
+    assert.equal(isNonSubstantiveP2Answer(answer), false);
+  }
 });
 
 test("P2 positive points require at least one evidenced legal element", () => {
