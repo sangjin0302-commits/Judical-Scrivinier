@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authConfig, createWorkOSVerifier } from "../../auth.mjs";
 import { callTool } from "../../server.mjs";
 import { verifyGoogleDocsParity } from "../../db/verify-google-docs-parity-readonly.mjs";
+import { dryRunAllGoogleDocs } from "../../db/dry-run-google-docs-sync.mjs";
 import { importConceptSheetQuestions } from "../../db/import-concept-sheet-questions.mjs";
 
 export const dynamic = "force-dynamic";
@@ -185,6 +186,24 @@ const baseHandler = createMcpHandler(
             "VERIFICATION_ERROR";
           return { content: [{ type: "text", text: "Docs parity verification failed: " + reason }],
             structuredContent: { error_code: reason }, isError: true };
+        }
+      },
+    );
+
+    server.registerTool(
+      "previewCivilDocsSync",
+      { title: "민법 Docs 증분 변경 읽기 전용 미리보기",
+        description: "기존 세 Google Docs와 테스트 PostgreSQL에서 신규·수정·중복·삭제 후보 건수만 읽습니다. 문제·채점키·개인 기록은 반환하거나 변경하지 않습니다.",
+        inputSchema: z.object({}),
+        annotations: readAnnotations, securitySchemes: oauthSecurity,
+        _meta: { securitySchemes: oauthSecurity } },
+      async () => {
+        try {
+          const result = await dryRunAllGoogleDocs();
+          return { content: [{ type: "text", text: JSON.stringify(result) }],
+            structuredContent: result, isError: false };
+        } catch {
+          return { content: [{ type: "text", text: "Docs sync preview failed" }], isError: true };
         }
       },
     );

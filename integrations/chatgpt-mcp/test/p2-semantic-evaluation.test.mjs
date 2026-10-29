@@ -47,3 +47,44 @@ test("P2 audit cannot call missing evidence a full match", () => {
     status: "MISSING", answerExcerpt: "" }] }, source);
   assert.equal(missing.coreElementMatch.rate, 0);
 });
+
+test("P2 abstention cannot receive points or a matching legal element", () => {
+  const abstention = { ...source, originalAnswer: "모르겠다.", awardedPoints: 0 };
+  const missing = { ...base, elements: [{ ...base.elements[0], status: "MISSING", answerExcerpt: "" }] };
+  assert.equal(buildP2SemanticAudit(missing, abstention).coreElementMatch.rate, 0);
+  assert.throws(() => buildP2SemanticAudit(missing, { ...abstention, awardedPoints: 1 }),
+    /cannot earn points/);
+  assert.throws(() => buildP2SemanticAudit({ ...base, elements: [{ ...base.elements[0],
+    answerExcerpt: "모르겠다" }] }, abstention), /cannot match elements/);
+});
+
+test("P2 public precedent fixture keeps equivalent reasoning, error and official score separate", () => {
+  // Public primary source: Supreme Court 2012다73158 (2014-12-24).
+  // These are infrastructure fixtures, never student performance or an official rubric.
+  const publicSource = { modelAnswer: "사해행위취소는 채권자와 수익자 사이에서 상대적으로 효력이 생긴다. 경매 매수인은 관습상 법정지상권을 취득한다.",
+    rubric: "상대적 효력, 토지와 건물의 소유 분리, 경매 매수인의 관습상 법정지상권을 검토한다." };
+  const cases = [
+    { originalAnswer: "취소 판결은 당사자 관계에만 미친다. 병은 관습법상 지상권을 얻는다.",
+      status: "MATCH", excerpt: "당사자 관계에만 미친다", rate: 1 },
+    { originalAnswer: "취소 판결 효력은 상대적이다. 결론은 모르겠다.",
+      status: "PARTIAL", excerpt: "취소 판결 효력은 상대적이다", rate: 0 },
+    { originalAnswer: "취소 판결로 매매는 절대적으로 소급 무효가 된다.",
+      status: "ERROR", excerpt: "절대적으로 소급 무효", rate: 0 },
+  ];
+  for (const item of cases) {
+    const audit = buildP2SemanticAudit({ ...base, elements: [{ category: "LAW", criterion: "사해행위취소의 상대적 효력",
+      status: item.status, modelExcerpt: "상대적으로 효력이 생긴다", answerExcerpt: item.excerpt,
+      explanation: "공개 판례에 비춰 수동 판정한 시험 입력",
+      ...(item.status === "ALTERNATIVE_ACCEPTED" ? { alternativeSourceRef: "대법원 2014.12.24. 선고 2012다73158" } : {}) }] },
+    { ...publicSource, originalAnswer: item.originalAnswer, awardedPoints: 0 });
+    assert.equal(audit.coreElementMatch.rate, item.rate);
+    assert.equal(audit.aiScore, undefined);
+  }
+  const equivalentExpression = buildP2SemanticAudit({ ...base, elements: [{ category: "CONCLUSION",
+    criterion: "경매 매수인의 지상권 취득", status: "MATCH",
+    modelExcerpt: "경매 매수인은 관습상 법정지상권을 취득한다",
+    answerExcerpt: "건물과 함께 지상권을 넘겨받는다",
+    explanation: "공개 판례의 경매 취득 법리를 다른 표현으로 설명" }] },
+  { ...publicSource, originalAnswer: "병은 건물과 함께 지상권을 넘겨받는다.", awardedPoints: 0 });
+  assert.equal(equivalentExpression.coreElementMatch.rate, 1);
+});

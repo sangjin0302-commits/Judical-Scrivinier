@@ -54,6 +54,9 @@ function normalizeProblem(problem) {
     explanationDigest,
     gradingKeyVersion,
     selectionMetadata: problem.selectionMetadata || {},
+    // Question-only Google Docs cannot attest grading or curriculum metadata.
+    gradingFieldsKnown: problem.gradingFieldsKnown !== false,
+    metadataFieldsKnown: problem.metadataFieldsKnown !== false,
   };
 }
 
@@ -108,13 +111,25 @@ export function classifyDocumentSnapshot(incomingProblems, currentProblems = [],
       }));
       continue;
     }
-    const next = values[0];
-    const prior = currentByKey.get(stableKey);
+    let next = values[0];
+    const priorRaw = currentByKey.get(stableKey);
+    const prior = priorRaw && { ...priorRaw,
+      sourceOrder: Number(priorRaw.sourceOrder),
+      maxPoints: priorRaw.maxPoints == null ? null : Number(priorRaw.maxPoints) };
     if (!prior) {
       results.push(candidate("NEW", stableKey, next));
       continue;
     }
     currentByKey.delete(stableKey);
+    if (!next.gradingFieldsKnown) {
+      next = { ...next, answerDigest: prior.answerDigest ?? null,
+        explanationDigest: prior.explanationDigest ?? null,
+        gradingKeyVersion: prior.gradingKeyVersion ?? null };
+    }
+    if (!next.metadataFieldsKnown) {
+      next = { ...next, unitId: prior.unitId ?? null,
+        selectionMetadata: prior.selectionMetadata || {} };
+    }
     if (documentId && prior.mappedDocumentId && prior.mappedDocumentId !== documentId) {
       results.push(candidate("DUPLICATE", null, {
         duplicateStableKey: stableKey,
@@ -203,6 +218,8 @@ export async function detectGoogleDocsChanges(pool, input, actorId) {
               v.source_order AS "sourceOrder", v.stage, v.unit_id AS "unitId",
               v.max_points AS "maxPoints", v.prompt_digest AS "promptDigest",
               v.answer_digest AS "answerDigest", v.explanation_digest AS "explanationDigest",
+              v.grading_key_version AS "gradingKeyVersion",
+              v.selection_metadata AS "selectionMetadata",
               m.document_id AS "mappedDocumentId"
          FROM problems p
          JOIN problem_versions v ON v.version_id=p.current_problem_version_id

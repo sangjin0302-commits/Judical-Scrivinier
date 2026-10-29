@@ -18,13 +18,15 @@ export function snapshotFromGoogleDoc(document, sourceId) {
     stableKey: problem.stableKey,
     sourceLocator: problem.sourceLocator,
     sourceVersion: "docs:" + sha256({ promptDigest: problem.promptDigest,
-      stage: problem.stage, maxPoints: problem.maxPoints }),
+      stage: problem.stage, maxPoints: problem.maxPoints, sourceOrder: problem.sourceOrder }),
     sourceOrder: problem.sourceOrder,
     stage: problem.stage,
     unitId: null,
     promptText: problem.promptText,
     maxPoints: problem.maxPoints,
     selectionMetadata: {},
+    gradingFieldsKnown: false,
+    metadataFieldsKnown: false,
   }));
   return normalizeDocumentSnapshot({
     documentId: document.documentId,

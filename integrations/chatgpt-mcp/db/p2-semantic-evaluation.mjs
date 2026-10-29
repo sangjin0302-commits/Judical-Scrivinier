@@ -19,11 +19,13 @@ function stringList(value, field) {
 }
 
 // Exact excerpts are evidence anchors only. Match judgments remain semantic, made after original submission.
-export function buildP2SemanticAudit(analysis, { modelAnswer, rubric, originalAnswer }) {
+export function buildP2SemanticAudit(analysis, { modelAnswer, rubric, originalAnswer, awardedPoints }) {
   if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) throw new Error("semantic analysis required");
   const source = clean(`${modelAnswer || ""} ${rubric || ""}`);
   const original = clean(originalAnswer);
   if (!source || !original) throw new Error("grading source or original answer missing");
+  const abstained = /^(?:모르겠다|모르겠습니다|모름|잘 모르겠습니다|알 수 없습니다|i(?: do not| don't) know)[.!?]?$/iu.test(original);
+  if (abstained && Number(awardedPoints) > 0) throw new Error("non-substantive answer cannot earn points");
   if (!Array.isArray(analysis.elements) || analysis.elements.length < 1 || analysis.elements.length > 30) {
     throw new Error("invalid semantic elements");
   }
@@ -53,6 +55,7 @@ export function buildP2SemanticAudit(analysis, { modelAnswer, rubric, originalAn
   });
   const matchedCount = elements.filter((item) => FULL_MATCH.has(item.status)).length;
   const partialCount = elements.filter((item) => item.status === "PARTIAL").length;
+  if (abstained && (matchedCount || partialCount)) throw new Error("non-substantive answer cannot match elements");
   const missingCount = elements.filter((item) => item.status === "MISSING").length;
   const errorCount = elements.filter((item) => item.status === "ERROR").length;
   return {

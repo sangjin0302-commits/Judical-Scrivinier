@@ -133,6 +133,39 @@ test("rejected candidate cannot be applied even if an approval row exists", asyn
   assert.equal(statements.some((sql) => sql.includes("UPDATE problems")), false);
 });
 
+test("approved new Docs prompt creates an unpublished version in one transaction", async () => {
+  const writes = [];
+  const client = {
+    async query(sql, args = []) {
+      if (sql === "BEGIN" || sql === "COMMIT") { writes.push(sql); return { rowCount: 0, rows: [] }; }
+      if (sql.includes("FROM sync_candidates c")) return { rowCount: 1, rows: [{
+        candidate_id: "c-new", state: "APPROVED", candidate_kind: "NEW",
+        stable_key: "SRC-CIV-004|새문제", document_id: "doc-1", revision_id: "r2",
+        prompt_changed: true, answer_changed: false, explanation_changed: false,
+        candidate_payload: { ...problem({ stableKey: "SRC-CIV-004|새문제",
+          sourceVersion: "docs:v2", promptText: "새 문제", sourceOrder: 2,
+          answerDigest: null, explanationDigest: null, gradingKeyVersion: null }),
+          promptDigest: sha256("새 문제") },
+      }] };
+      if (sql.includes("FROM sync_approvals")) return { rows: [{ approval_type: "CONTENT" }] };
+      if (sql.includes("INSERT INTO problem_versions")) { writes.push({ sql, args }); return { rows: [{ version_id: "v2" }] }; }
+      writes.push({ sql, args });
+      return { rowCount: 1, rows: [] };
+    },
+    release() {},
+  };
+  const result = await applyApprovedSyncCandidate({ connect: async () => client }, {
+    candidateId: "c-new", actorId: "maintainer",
+  });
+  assert.equal(result.ok, true);
+  const inserted = writes.find((entry) => entry.sql?.includes("INSERT INTO problems"));
+  assert.ok(inserted);
+  assert.match(inserted.sql, /published,selection_metadata,content_digest/);
+  assert.match(inserted.sql, /false/);
+  assert.ok(writes.some((entry) => entry.sql?.includes("UPDATE sync_candidates SET state='APPLIED'")));
+  assert.equal(writes.at(-1), "COMMIT");
+});
+
 test("answer-only change is independently marked for grading approval", () => {
   const current = [{
     ...problem(),

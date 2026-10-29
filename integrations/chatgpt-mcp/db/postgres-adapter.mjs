@@ -303,7 +303,7 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
         gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
       const semanticAudit = buildP2SemanticAudit(evaluation.semanticAnalysis, {
         modelAnswer: gradingSource.answer, rubric: gradingSource.rubric,
-        originalAnswer: originalsByKey.get(item.stable_key) });
+        originalAnswer: originalsByKey.get(item.stable_key), awardedPoints: evaluation.awardedPoints });
       const payload = { correction: evaluation.correction || "", missingOutline: evaluation.missingOutline || "",
         wrongLaw: evaluation.wrongLaw || "", applicationFix: evaluation.applicationFix || "",
         modelDifference: evaluation.modelDifference || "", nextReview: evaluation.nextReview,
