@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import { authConfig } from "../auth.mjs";
 
@@ -25,4 +26,13 @@ test("auth config rejects a missing allowlist", () => {
       }),
     /ALLOWED_WORKOS_USER_IDS/,
   );
+});
+
+test("desktop OAuth consent uses PKCE and permits existing client ID without a local secret", async () => {
+  const source = await readFile(new URL("../oauth-login.mjs", import.meta.url), "utf8");
+  assert.match(source, /code_challenge_method: "S256"/);
+  assert.match(source, /code_verifier: codeVerifier/);
+  assert.match(source, /oauthClient\.client_secret \? \{ client_secret:/);
+  assert.match(source, /documents\.readonly/);
+  assert.doesNotMatch(source, /console\.log\(token\)/);
 });

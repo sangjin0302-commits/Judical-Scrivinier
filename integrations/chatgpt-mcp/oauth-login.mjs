@@ -1,18 +1,20 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 const clientPath = resolve(process.env.GOOGLE_OAUTH_CLIENT_FILE || "private/oauth/google-desktop-client.json");
 const tokenPath = resolve(process.env.GOOGLE_OAUTH_TOKEN_FILE || "private/oauth/google-user-token.json");
-const envClient = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+const envClient = process.env.GOOGLE_CLIENT_ID
   ? { client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET }
   : null;
 const credentials = envClient ? null : JSON.parse(await readFile(clientPath, "utf8"));
 const oauthClient = envClient || credentials.installed || credentials.web;
-if (!oauthClient?.client_id || !oauthClient?.client_secret) throw new Error("OAuth 클라이언트 JSON 형식이 올바르지 않습니다.");
+if (!oauthClient?.client_id) throw new Error("OAuth 클라이언트 ID가 없습니다.");
 
 const state = randomBytes(24).toString("base64url");
+const codeVerifier = randomBytes(48).toString("base64url");
+const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
 const scopes = [
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/script.scriptapp",
@@ -36,8 +38,9 @@ const server = createServer(async (request, response) => {
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         client_id: oauthClient.client_id,
-        client_secret: oauthClient.client_secret,
+        ...(oauthClient.client_secret ? { client_secret: oauthClient.client_secret } : {}),
         code,
+        code_verifier: codeVerifier,
         grant_type: "authorization_code",
         redirect_uri: redirectUri
       })
@@ -76,6 +79,8 @@ server.listen(0, "127.0.0.1", () => {
     response_type: "code",
     scope: scopes.join(" "),
     access_type: "offline",
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
     include_granted_scopes: "true",
     prompt: "consent",
     state
