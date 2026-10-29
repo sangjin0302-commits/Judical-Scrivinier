@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import pg from "pg";
 import { postgresConnectionOptions } from "./pg-connection.mjs";
-import { buildP2SemanticAudit } from "./p2-semantic-evaluation.mjs";
+import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "./p2-semantic-evaluation.mjs";
 
 const SUBJECT = "CIVIL";
+const P2_SCORE_FIELDS = ["issue", "outline", "law", "precedent", "application", "conclusion", "expression"];
 const stableValue = (value) => {
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
@@ -298,6 +299,14 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
       if (Number(evaluation.maxPoints) !== Number(item.max_points)) throw new Error(`maxPoints mismatch: ${evaluation.key}`);
       if (!Number.isFinite(evaluation.awardedPoints) || evaluation.awardedPoints < 0 ||
           evaluation.awardedPoints > Number(item.max_points)) throw new Error("awarded points outside official maximum");
+      if (!evaluation.scores || P2_SCORE_FIELDS.some((field) =>
+        !Number.isInteger(evaluation.scores[field]) || evaluation.scores[field] < 0 || evaluation.scores[field] > 2)) {
+        throw new Error("invalid P2 seven-element scores");
+      }
+      if (isNonSubstantiveP2Answer(originalsByKey.get(evaluation.key)) &&
+          P2_SCORE_FIELDS.some((field) => evaluation.scores[field] !== 0)) {
+        throw new Error("non-substantive answer cannot earn seven-element credit");
+      }
       const keyRow = keys.get(item.stable_key);
       const gradingSource = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
         gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);

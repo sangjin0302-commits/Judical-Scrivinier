@@ -5,6 +5,8 @@ const STATUSES = new Set(["MATCH", "PARTIAL", "MISSING", "ERROR", "ALTERNATIVE_A
 const FULL_MATCH = new Set(["MATCH", "ALTERNATIVE_ACCEPTED"]);
 
 const clean = (value) => String(value ?? "").normalize("NFC").replace(/\s+/gu, " ").trim();
+export const isNonSubstantiveP2Answer = (value) =>
+  /^(?:모르겠다|모르겠습니다|모름|잘 모르겠습니다|알 수 없습니다|i(?: do not| don't) know)[.!?]?$/iu.test(clean(value));
 const sha256 = (value) => createHash("sha256").update(value, "utf8").digest("hex");
 
 function bounded(value, field, limit = 2000) {
@@ -24,7 +26,7 @@ export function buildP2SemanticAudit(analysis, { modelAnswer, rubric, originalAn
   const source = clean(`${modelAnswer || ""} ${rubric || ""}`);
   const original = clean(originalAnswer);
   if (!source || !original) throw new Error("grading source or original answer missing");
-  const abstained = /^(?:모르겠다|모르겠습니다|모름|잘 모르겠습니다|알 수 없습니다|i(?: do not| don't) know)[.!?]?$/iu.test(original);
+  const abstained = isNonSubstantiveP2Answer(original);
   if (abstained && Number(awardedPoints) > 0) throw new Error("non-substantive answer cannot earn points");
   if (!Array.isArray(analysis.elements) || analysis.elements.length < 1 || analysis.elements.length > 30) {
     throw new Error("invalid semantic elements");

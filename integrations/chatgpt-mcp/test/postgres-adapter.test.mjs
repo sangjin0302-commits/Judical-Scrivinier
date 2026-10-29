@@ -73,6 +73,7 @@ test("P2 commit validates official and original evidence before any grade write"
   const statements = [];
   let committedDigest;
   let storedPayload;
+  let originalAnswer = "요건이 충족된다.";
   const client = {
     async query(sql, values = []) {
       statements.push(sql);
@@ -88,7 +89,7 @@ test("P2 commit validates official and original evidence before any grade write"
         { key_version: "v1", encryption_key_id: "key-v1", encrypted_payload: encrypted,
           payload_digest: crypto.createHash("sha256").update(plaintext).digest("hex") }] };
       if (sql.includes("FROM original_answers")) return { rowCount: 1, rows: [
-        { stable_key: "p2-1", answer_text: "요건이 충족된다." }] };
+        { stable_key: "p2-1", answer_text: originalAnswer }] };
       if (sql.includes("INSERT INTO p2_grades")) storedPayload = JSON.parse(values[15]);
       if (sql.includes("UPDATE submissions SET grade_digest")) committedDigest = values[0];
       if (sql.includes("FROM p2_grades")) return { rowCount: 1, rows: [
@@ -113,6 +114,20 @@ test("P2 commit validates official and original evidence before any grade write"
   ] }, { ownerId: "user-1" }), /model evidence absent/);
   assert.equal(statements.filter((sql) => sql.includes("INSERT INTO p2_grades")).length, 0);
   assert.equal(statements.at(-1), "ROLLBACK");
+  statements.length = 0;
+  await assert.rejects(() => executor("commitCivilP2Grade", { setId: "set-1", evaluations: [
+    { ...evaluation, scores: { ...evaluation.scores, precedent: 2.5 } },
+  ] }, { ownerId: "user-1" }), /invalid P2 seven-element scores/);
+  assert.equal(statements.filter((sql) => sql.includes("INSERT INTO p2_grades")).length, 0);
+  assert.equal(statements.at(-1), "ROLLBACK");
+  statements.length = 0;
+  originalAnswer = "모르겠다.";
+  await assert.rejects(() => executor("commitCivilP2Grade", { setId: "set-1", evaluations: [
+    { ...evaluation, awardedPoints: 0, scores: { ...evaluation.scores, issue: 1 } },
+  ] }, { ownerId: "user-1" }), /non-substantive answer cannot earn seven-element credit/);
+  assert.equal(statements.filter((sql) => sql.includes("INSERT INTO p2_grades")).length, 0);
+  assert.equal(statements.at(-1), "ROLLBACK");
+  originalAnswer = "요건이 충족된다.";
   statements.length = 0;
   const result = await executor("commitCivilP2Grade", { setId: "set-1", evaluations: [evaluation] },
     { ownerId: "user-1" });
