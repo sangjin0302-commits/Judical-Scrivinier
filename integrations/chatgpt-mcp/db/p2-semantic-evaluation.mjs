@@ -56,6 +56,9 @@ export function buildP2SemanticAudit(analysis, { modelAnswer, rubric, originalAn
   const matchedCount = elements.filter((item) => FULL_MATCH.has(item.status)).length;
   const partialCount = elements.filter((item) => item.status === "PARTIAL").length;
   if (abstained && (matchedCount || partialCount)) throw new Error("non-substantive answer cannot match elements");
+  if (Number(awardedPoints) > 0 && matchedCount + partialCount === 0) {
+    throw new Error("positive points require supported matched or partial elements");
+  }
   const missingCount = elements.filter((item) => item.status === "MISSING").length;
   const errorCount = elements.filter((item) => item.status === "ERROR").length;
   return {

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { validateConceptToolInput } from "../concept-tools.mjs";
-import { calculateNextReview } from "../db/concept-service.mjs";
+import { calculateNextReview, createConceptExecutor } from "../db/concept-service.mjs";
 import { buildCurriculumSnapshot, parseCsv, parseNumberedQuestions, splitLessonLayers } from "../db/import-concept-curriculum.mjs";
 
 test("curriculum snapshot preserves 240 units and 720 stable recall ids without inventing missing content", async () => {
@@ -72,4 +72,50 @@ test("concept schema and due query track review streak per recall question", asy
   assert.match(migration, /remembered_count integer NOT NULL/);
   assert.match(service, /DISTINCT ON \(a\.question_id\)/);
   assert.match(service, /WHERE owner_id=\$1 AND subject_id=\$2 AND question_id=\$3/);
+});
+
+test("unverified recall templates stay out of lessons, due reviews, and new answer records", async () => {
+  const queries = [];
+  const client = {
+    async query(sql) {
+      queries.push(sql);
+      if (sql.includes("FROM units u")) return { rowCount: 1, rows: [{ unit_id: "U1", study_mode: "CONCEPT_ONLY" }] };
+      if (sql.includes("to_regclass")) return { rowCount: 1, rows: [{ available: false }] };
+      if (sql.includes("FROM recall_questions") && sql.includes("question_order")) return { rowCount: 2, rows: [
+        { question_id: "U1-Q1", content_state: "source-mapped", prompt_text: "검증된 질문" },
+        { question_id: "U1-Q2", content_state: "template-unverified", prompt_text: "미검증 템플릿" },
+      ] };
+      if (sql.includes("FROM latest l")) return { rowCount: 2, rows: [
+        { question_id: "U1-Q1", content_state: "source-mapped" },
+        { question_id: "U1-Q2", content_state: "template-unverified" },
+      ] };
+      if (sql.includes("FROM recall_attempts WHERE owner_id=$1") && sql.includes("request_id=$3")) {
+        return { rowCount: 0, rows: [] };
+      }
+      if (sql.includes("SELECT unit_id,content_state FROM recall_questions")) {
+        return { rowCount: 1, rows: [{ unit_id: "U1", content_state: "template-unverified" }] };
+      }
+      return { rowCount: 0, rows: [] };
+    },
+    release() {},
+  };
+  const tool = createConceptExecutor({ pool: { connect: async () => client } });
+  const ctx = { ownerId: "owner-1" };
+  const unit = await tool("getCivilConceptUnit", { unitId: "U1", mode: "CONCEPT_ONLY" }, ctx);
+  assert.deepEqual(unit.recallQuestions.map((row) => row.question_id), ["U1-Q1"]);
+  const due = await tool("getCivilDueReviews", { limit: 10 }, ctx);
+  assert.deepEqual(due.reviews.map((row) => row.question_id), ["U1-Q1"]);
+  await assert.rejects(() => tool("submitCivilRecall", {
+    requestId: "r-unsafe", questionId: "U1-Q2", answerText: "사용자 답", memoryResult: "PARTIAL",
+  }, ctx), /recall question content unavailable/);
+  assert.equal(queries.filter((sql) => sql.includes("INSERT INTO recall_attempts")).length, 0);
+  assert.ok(queries.some((sql) => sql.includes("ROLLBACK")));
+});
+
+test("unverified concept import remains maintenance-only", async () => {
+  const mcp = await readFile(new URL("../app/mcp/route.js", import.meta.url), "utf8");
+  const maintenance = await readFile(new URL("../app/api/maintenance/import-concept-sheet-questions/route.js", import.meta.url), "utf8");
+  assert.doesNotMatch(mcp, /server\.registerTool\(\s*["']importCivilConceptQuestionTemplates["']/);
+  assert.match(maintenance, /timingSafeEqual/);
+  assert.match(maintenance, /MAINTENANCE_TOKEN/);
 });

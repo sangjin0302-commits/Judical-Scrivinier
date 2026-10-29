@@ -5,6 +5,7 @@ import { createPostgresPool } from "./postgres-adapter.mjs";
 const SUBJECT = "CIVIL";
 const MODES = new Set(["INTEGRATED", "CONCEPT_ONLY", "PROBLEM_ONLY"]);
 const RESULTS = new Set(["REMEMBERED", "PARTIAL", "RELEARN"]);
+const USABLE_RECALL_STATES = new Set(["source-mapped", "verified"]);
 const stableValue = (value) => Array.isArray(value) ? value.map(stableValue) :
   value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])])) : value;
 const canonical = (value) => JSON.stringify(stableValue(value));
@@ -118,7 +119,8 @@ async function getConceptUnit(pool, ownerId, input) {
           ORDER BY material_type`, [SUBJECT, unitId]) : { rows: [] },
       includeConcept ? client.query(
         `SELECT question_id,question_order,prompt_text,content_state FROM recall_questions
-          WHERE subject_id=$1 AND unit_id=$2 ORDER BY question_order`, [SUBJECT, unitId]) : { rows: [] },
+          WHERE subject_id=$1 AND unit_id=$2 AND content_state IN ('source-mapped','verified')
+          ORDER BY question_order`, [SUBJECT, unitId]) : { rows: [] },
       includeConcept ? client.query(
         `SELECT issue_id,issue_name,issue_tier,classification_basis,p1_requirement,p2_requirement
            FROM concept_issues WHERE subject_id=$1 AND unit_id=$2 ORDER BY issue_tier,issue_id`, [SUBJECT, unitId]) : { rows: [] },
@@ -142,7 +144,8 @@ async function getConceptUnit(pool, ownerId, input) {
           ORDER BY l.question_id,l.issue_id`, [SUBJECT, unitId]) : { rows: [] },
     ]);
     return { ok: true, mode, unit: unit.rows[0], materials: materials.rows,
-      recallQuestions: questions.rows, issues: issues.rows, linkedProblems: problems.rows,
+      recallQuestions: questions.rows.filter((row) => USABLE_RECALL_STATES.has(row.content_state)),
+      issues: issues.rows, linkedProblems: problems.rows,
       studyActivities: activities.rows, questionIssueLinks: questionIssueLinks.rows,
       questionIssueLinkState: includeConcept ? (issueLinksAvailable ? "available" : "migration-pending") : "not-requested" };
   } finally { client.release(); }
@@ -182,9 +185,11 @@ async function getDueReviews(pool, ownerId, input) {
          JOIN units u ON u.subject_id=$2 AND u.unit_id=l.unit_id
          JOIN recall_questions q ON q.subject_id=$2 AND q.question_id=l.question_id
         WHERE l.next_review_at <= now() AND q.prompt_text IS NOT NULL
+          AND q.content_state IN ('source-mapped','verified')
         ORDER BY l.next_review_at,u.learning_order,q.question_order LIMIT $3`,
       [ownerId, SUBJECT, limit]);
-    return { ok: true, count: result.rowCount, reviews: result.rows };
+    const reviews = result.rows.filter((row) => USABLE_RECALL_STATES.has(row.content_state));
+    return { ok: true, count: reviews.length, reviews };
   } finally { client.release(); }
 }
 
@@ -213,8 +218,11 @@ async function submitRecall(pool, ownerId, input) {
     }
     const question = await client.query(
       `SELECT unit_id,content_state FROM recall_questions
-        WHERE subject_id=$1 AND question_id=$2 AND prompt_text IS NOT NULL FOR SHARE`, [SUBJECT, questionId]);
-    if (question.rowCount !== 1) throw new Error("recall question content unavailable");
+        WHERE subject_id=$1 AND question_id=$2 AND prompt_text IS NOT NULL
+          AND content_state IN ('source-mapped','verified') FOR SHARE`, [SUBJECT, questionId]);
+    if (question.rowCount !== 1 || !USABLE_RECALL_STATES.has(question.rows[0].content_state)) {
+      throw new Error("recall question content unavailable");
+    }
     const rule = await activeRule(client);
     const progress = await client.query(
       `SELECT learning_tier,progress_state,evidence_digest FROM learner_progress

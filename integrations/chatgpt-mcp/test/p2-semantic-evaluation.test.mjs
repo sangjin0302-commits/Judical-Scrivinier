@@ -58,6 +58,15 @@ test("P2 abstention cannot receive points or a matching legal element", () => {
     answerExcerpt: "모르겠다" }] }, abstention), /cannot match elements/);
 });
 
+test("P2 positive points require at least one evidenced legal element", () => {
+  const irrelevant = { ...source, originalAnswer: "사안의 결론을 알 수 없다.", awardedPoints: 1 };
+  const allMissing = { ...base, elements: [{ ...base.elements[0], status: "MISSING", answerExcerpt: "" }] };
+  assert.throws(() => buildP2SemanticAudit(allMissing, irrelevant), /positive points require/);
+  const partial = { ...base, elements: [{ ...base.elements[0], status: "PARTIAL",
+    answerExcerpt: "사안의 결론을 알 수 없다." }] };
+  assert.equal(buildP2SemanticAudit(partial, irrelevant).coreElementMatch.partialCount, 1);
+});
+
 test("P2 public precedent fixture keeps equivalent reasoning, error and official score separate", () => {
   // Public primary source: Supreme Court 2012다73158 (2014-12-24).
   // These are infrastructure fixtures, never student performance or an official rubric.

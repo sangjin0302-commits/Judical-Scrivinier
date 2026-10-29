@@ -1,5 +1,5 @@
 import { classifyDocumentSnapshot, fetchGoogleDocReadOnly, normalizeDocumentSnapshot, sha256 } from "./google-docs-sync.mjs";
-import { parseP1Document, parseP2Document } from "./google-docs-parser.mjs";
+import { normalizedPrompt, parseP1Document, parseP2Document } from "./google-docs-parser.mjs";
 
 const SOURCES = new Map([
   ["SRC-CIV-004", parseP1Document],
@@ -48,17 +48,41 @@ export async function fetchGoogleDocsSnapshotReadOnly({ documentId, sourceId, ac
 // no Docs source map, so metadata-only candidates need explicit baseline review.
 export function dryRunGoogleDocsCandidates(snapshot, currentProblems = []) {
   const candidates = classifyDocumentSnapshot(snapshot.problems, currentProblems, snapshot.documentId);
-  const counts = Object.fromEntries(["NEW", "MODIFIED", "UNCHANGED", "DUPLICATE", "DELETE_CANDIDATE"]
-    .map((kind) => [kind, candidates.filter((item) => item.kind === kind).length]));
+  const duplicateKeys = new Set(candidates.filter((item) => item.kind === "DUPLICATE")
+    .map((item) => item.payload.duplicateStableKey));
+  const currentByKey = new Map(currentProblems.map((problem) => [problem.stableKey, problem]));
+  const counts = { NEW: 0, MODIFIED: 0, UNCHANGED: 0, DUPLICATE: 0, DELETE_CANDIDATE: 0 };
+  let normalizedOnly = 0;
+  let baselineMetadataOnly = 0;
+  for (const next of snapshot.problems) {
+    if (duplicateKeys.has(next.stableKey)) { currentByKey.delete(next.stableKey); continue; }
+    const prior = currentByKey.get(next.stableKey);
+    if (!prior) { counts.NEW += 1; continue; }
+    currentByKey.delete(next.stableKey);
+    const exactPrompt = next.promptDigest === prior.promptDigest;
+    const samePrompt = exactPrompt || (prior.promptText != null &&
+      normalizedPrompt(next.promptText) === normalizedPrompt(prior.promptText));
+    const materialChange = !samePrompt || next.stage !== prior.stage ||
+      Number(next.maxPoints ?? 0) !== Number(prior.maxPoints ?? 0);
+    if (materialChange) counts.MODIFIED += 1;
+    else {
+      counts.UNCHANGED += 1;
+      if (!exactPrompt) normalizedOnly += 1;
+      if (next.sourceVersion !== prior.sourceVersion || next.sourceLocator !== prior.sourceLocator ||
+          Number(next.sourceOrder) !== Number(prior.sourceOrder)) baselineMetadataOnly += 1;
+    }
+  }
+  counts.DELETE_CANDIDATE = currentByKey.size;
+  counts.DUPLICATE = candidates.filter((item) => item.kind === "DUPLICATE").length;
   return {
     readOnly: true,
     documentId: snapshot.documentId,
     revisionId: snapshot.revisionId,
     parsedUnique: snapshot.problems.length,
     counts,
-    promptModified: candidates.filter((item) => item.kind === "MODIFIED" && item.promptChanged).length,
-    metadataOnlyModified: candidates.filter((item) => item.kind === "MODIFIED" && !item.promptChanged &&
-      !item.answerChanged && !item.explanationChanged).length,
-    needsReview: candidates.some((item) => item.kind !== "UNCHANGED"),
+    promptModified: counts.MODIFIED,
+    normalizedOnly,
+    baselineMetadataOnly,
+    needsReview: counts.NEW + counts.MODIFIED + counts.DUPLICATE + counts.DELETE_CANDIDATE > 0,
   };
 }

@@ -40,8 +40,9 @@ test("question-only Docs change preserves existing grading and unit metadata", (
     answerDigest: "a".repeat(64), explanationDigest: "b".repeat(64),
     gradingKeyVersion: "criteria-verified", selectionMetadata: { issueClass: "A" } };
   const result = dryRunGoogleDocsCandidates(snapshot, [prior]);
-  assert.equal(result.counts.MODIFIED, 1);
-  assert.equal(result.metadataOnlyModified, 1);
+  assert.equal(result.counts.UNCHANGED, 1);
+  assert.equal(result.counts.MODIFIED, 0);
+  assert.equal(result.baselineMetadataOnly, 1);
   assert.equal(result.promptModified, 0);
   const [candidate] = classifyDocumentSnapshot(snapshot.problems, [prior], snapshot.documentId);
   assert.equal(candidate.answerChanged, false);
@@ -57,12 +58,18 @@ test("dry-run reports metadata-only baseline churn separately from changed promp
     currentVersionId: "v1" }];
   const unchangedBody = dryRunGoogleDocsCandidates(snapshot, samePrompt);
   assert.equal(unchangedBody.readOnly, true);
-  assert.equal(unchangedBody.counts.MODIFIED, 1);
-  assert.equal(unchangedBody.metadataOnlyModified, 1);
+  assert.equal(unchangedBody.counts.UNCHANGED, 1);
+  assert.equal(unchangedBody.counts.MODIFIED, 0);
+  assert.equal(unchangedBody.baselineMetadataOnly, 1);
   assert.equal(unchangedBody.promptModified, 0);
   const changedBody = dryRunGoogleDocsCandidates(snapshot, [{ ...samePrompt[0],
-    promptDigest: "a".repeat(64) }]);
+    promptText: "다른 법률효과", promptDigest: "a".repeat(64) }]);
   assert.equal(changedBody.promptModified, 1);
+  assert.equal(changedBody.counts.MODIFIED, 1);
+  const formatOnly = dryRunGoogleDocsCandidates(snapshot, [{ ...samePrompt[0],
+    promptText: "관습은 **의사를** 보충한다.", promptDigest: "b".repeat(64) }]);
+  assert.equal(formatOnly.counts.MODIFIED, 0);
+  assert.equal(formatOnly.normalizedOnly, 1);
 });
 
 test("snapshot rejects unexpected source and conflicting duplicate key", () => {

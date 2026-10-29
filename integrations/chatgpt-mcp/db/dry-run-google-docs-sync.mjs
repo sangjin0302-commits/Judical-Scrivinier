@@ -45,7 +45,8 @@ export async function dryRunAllGoogleDocs({ env = process.env, fetchImpl = fetch
         `SELECT p.stable_key AS "stableKey", COALESCE(m.source_locator,p.source_ref) AS "sourceLocator",
                 p.current_problem_version_id AS "currentVersionId", v.source_version AS "sourceVersion",
                 v.source_order AS "sourceOrder", v.stage, v.unit_id AS "unitId",
-                v.max_points AS "maxPoints", v.prompt_digest AS "promptDigest",
+                v.max_points AS "maxPoints", v.prompt_text AS "promptText",
+                v.prompt_digest AS "promptDigest",
                 v.answer_digest AS "answerDigest", v.explanation_digest AS "explanationDigest",
                 v.grading_key_version AS "gradingKeyVersion", v.selection_metadata AS "selectionMetadata",
                 m.document_id AS "mappedDocumentId"

@@ -8,7 +8,8 @@
     "build": "next build",
     "oauth:login": "node oauth-login.mjs",
     "start": "node server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:docs-sync-integration": "node test/google-docs-sync.integration.mjs"
   },
   "engines": {
     "node": ">=20"
