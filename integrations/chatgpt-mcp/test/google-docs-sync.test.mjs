@@ -112,6 +112,27 @@ test("stale approved candidate cannot replace a newer problem version", async ()
   assert.equal(statements.some((sql) => sql.includes("UPDATE problems")), false);
 });
 
+test("rejected candidate cannot be applied even if an approval row exists", async () => {
+  const statements = [];
+  const client = {
+    async query(sql) {
+      statements.push(sql);
+      if (sql === "BEGIN" || sql === "ROLLBACK") return { rowCount: 0, rows: [] };
+      if (sql.includes("FROM sync_candidates c")) return { rowCount: 1, rows: [{
+        state: "REJECTED", candidate_kind: "MODIFIED", stable_key: "K1",
+        candidate_payload: { baseVersionId: "v1" },
+      }] };
+      throw new Error("unexpected query");
+    },
+    release() {},
+  };
+  await assert.rejects(() => applyApprovedSyncCandidate({ connect: async () => client }, {
+    candidateId: "candidate-rejected", actorId: "maintainer",
+  }), /candidate approval state required/);
+  assert.equal(statements.at(-1), "ROLLBACK");
+  assert.equal(statements.some((sql) => sql.includes("UPDATE problems")), false);
+});
+
 test("answer-only change is independently marked for grading approval", () => {
   const current = [{
     ...problem(),

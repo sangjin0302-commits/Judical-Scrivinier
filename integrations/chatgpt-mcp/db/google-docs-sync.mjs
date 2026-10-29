@@ -252,6 +252,8 @@ export async function approveSyncCandidate(pool, input) {
          FROM sync_candidates WHERE candidate_id=$1 FOR UPDATE`, [candidateId]);
     if (candidate.rowCount !== 1) throw new Error("candidate not found");
     if (candidate.rows[0].candidate_kind === "DUPLICATE") throw new Error("duplicate candidate cannot be approved");
+    if (candidate.rows[0].state === "REJECTED") throw new Error("rejected candidate cannot be approved");
+    if (candidate.rows[0].state === "APPLIED") throw new Error("applied candidate cannot be approved");
     if (approvalType === "GRADING" && !candidate.rows[0].answer_changed && !candidate.rows[0].explanation_changed) {
       throw new Error("grading approval is not required");
     }
@@ -286,6 +288,7 @@ export async function applyApprovedSyncCandidate(pool, input) {
     if (candidate.rowCount !== 1) throw new Error("candidate not found");
     const row = candidate.rows[0];
     if (row.state === "APPLIED") return { ok: true, replayed: true, candidateId };
+    if (row.state !== "APPROVED") throw new Error("candidate approval state required");
     if (row.candidate_kind === "DUPLICATE") throw new Error("duplicate candidate cannot be applied");
     if (row.candidate_kind !== "NEW") {
       const current = await client.query(
@@ -377,7 +380,7 @@ export async function applyApprovedSyncCandidate(pool, input) {
 export async function fetchGoogleDocReadOnly({ documentId, accessToken, fetchImpl = fetch }) {
   const id = encodeURIComponent(required(documentId, "documentId"));
   const token = required(accessToken, "accessToken");
-  const response = await fetchImpl(`https://docs.googleapis.com/v1/documents/${id}`, {
+  const response = await fetchImpl(`https://docs.googleapis.com/v1/documents/${id}?includeTabsContent=true`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });

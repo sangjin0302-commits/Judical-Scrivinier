@@ -32,5 +32,10 @@ test("unmapped issue, generic wording, missing evidence, or preapproval fail clo
   assert.throws(() => prepareRecallQuestionProposal({ ...candidate,
     proposedPrompt: "이 단원의 핵심 법리 전체를 모두 설명하시오?" }, index));
   assert.throws(() => prepareRecallQuestionProposal({ ...candidate, legalEvidence: [] }, index));
+  assert.throws(() => prepareRecallQuestionProposal({ ...candidate, legalEvidence: [null] }, index));
+  assert.throws(() => prepareRecallQuestionProposal({ ...candidate,
+    legalEvidence: [{ type: "case", ref: "" }] }, index));
+  assert.throws(() => prepareRecallQuestionProposal({ ...candidate,
+    source: { ...candidate.source, verifiedAt: "unknown" } }, index));
   assert.throws(() => prepareRecallQuestionProposal({ ...candidate, approvalState: "APPROVED" }, index));
 });

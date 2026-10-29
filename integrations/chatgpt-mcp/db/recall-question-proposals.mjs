@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 const FOCUS = new Set(["PARTY", "ELEMENT", "EFFECT", "EXCEPTION"]);
+const EVIDENCE_TYPES = new Set(["statute", "case", "official-interpretation"]);
 const BROAD = /(핵심\s*법리\s*(전체|모두)|전체\s*법리|모든\s*법리)/;
 const hash = (text) => createHash("sha256").update(text).digest("hex");
 
@@ -17,8 +18,11 @@ export function prepareRecallQuestionProposal(candidate, index) {
       !/[?？]$/.test(prompt)) throw new Error("specific review question required");
   if (!FOCUS.has(candidate.focus)) throw new Error("question focus required");
   if (!candidate.source?.path || !/^sha256:[0-9a-f]{64}$/.test(candidate.source.version || "") ||
-      !candidate.source.verifiedBy || !candidate.source.verifiedAt ||
-      !Array.isArray(candidate.legalEvidence) || !candidate.legalEvidence.length) {
+      !candidate.source.verifiedBy || !/^\d{4}-\d{2}-\d{2}$/.test(candidate.source.verifiedAt || "") ||
+      !Array.isArray(candidate.legalEvidence) || !candidate.legalEvidence.length ||
+      candidate.legalEvidence.length > 20 || candidate.legalEvidence.some((item) =>
+        !EVIDENCE_TYPES.has(item?.type) || typeof item.ref !== "string" ||
+        !item.ref.trim() || item.ref.length > 500)) {
     throw new Error("source and legal verification evidence required");
   }
   if (candidate.approvalState !== "PENDING") throw new Error("proposal must remain pending review");
