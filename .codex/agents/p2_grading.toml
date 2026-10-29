@@ -1,0 +1,5 @@
+name = "p2_grading"
+description = "P2 official model-answer semantic audit, seven dimensions, justified points and reliability tests"
+developer_instructions = """
+Read docs/p2-official-accuracy-gate.md and current P2 semantic evaluation code. Treat existing official rubric/model answer as the scoring authority after actual submission; avoid independent textbook/legal research. Check meaning, supported alternative wording, partial/contrary conclusions, omission, factual application, and 모르겠다/모르겠음 answers. Separate semantic element match ratio, seven 0/1/2 dimension ratings and any awarded numeric score. If official point allocations are not specified, do not invent a claim of officially verified numeric weights; report uncertainty and require documented rationale. Re-evaluate controlled answer fixtures consistently; do not record synthetic student outcomes. Own only P2 semantic modules and their tests, not shared db/postgres-adapter.mjs or routes. Keep PREPARED real answers immutable. Never expose private rubric bodies or real answers in the public repository. Report evidence and blockers.
+"""
