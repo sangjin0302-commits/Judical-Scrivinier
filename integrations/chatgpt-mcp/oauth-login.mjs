@@ -46,7 +46,13 @@ const server = createServer(async (request, response) => {
       })
     });
     const token = await tokenResponse.json();
-    if (!tokenResponse.ok || !token.refresh_token) throw new Error(`OAuth 토큰 발급 실패 (${tokenResponse.status})`);
+    if (!tokenResponse.ok || !token.refresh_token) {
+      const errorCode = String(token.error || "missing_refresh_token").replace(/[^a-z_]/g, "");
+      const detail = String(token.error_description || "");
+      const cause = ["client_secret", "client_id", "code_verifier", "redirect_uri", "grant_type"]
+        .find((field) => detail.includes(field)) || "other";
+      throw new Error(`OAuth 토큰 발급 실패 (${tokenResponse.status}, ${errorCode}, ${cause})`);
+    }
     const grantedScopes = new Set(String(token.scope || "").split(/\s+/).filter(Boolean));
     if (scopes.some((scope) => !grantedScopes.has(scope))) {
       throw new Error("필요한 Google 읽기 권한이 모두 승인되지 않았습니다.");
@@ -91,4 +97,4 @@ server.listen(0, "127.0.0.1", () => {
 setTimeout(() => {
   process.stderr.write("OAUTH_ERROR: 승인 시간 초과\n");
   server.close();
-}, 10 * 60 * 1000).unref();
+}, 30 * 60 * 1000).unref();

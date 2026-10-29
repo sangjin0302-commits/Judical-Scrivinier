@@ -175,8 +175,16 @@ const baseHandler = createMcpHandler(
         try {
           const result = await verifyGoogleDocsParity();
           return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false };
-        } catch {
-          return { content: [{ type: "text", text: "Docs parity verification failed" }], isError: true };
+        } catch (error) {
+          const message = String(error?.message || "");
+          const reason = message.startsWith("Google OAuth refresh failed") ? "GOOGLE_OAUTH_REFRESH" :
+            message.startsWith("Google Docs read failed: 403") ? "GOOGLE_DOCS_FORBIDDEN" :
+            message.startsWith("Google Docs read failed: 404") ? "GOOGLE_DOCS_NOT_FOUND" :
+            message.startsWith("Google Docs read failed") ? "GOOGLE_DOCS_READ" :
+            message.includes("DATABASE_URL") ? "DATABASE_CONFIG" :
+            "VERIFICATION_ERROR";
+          return { content: [{ type: "text", text: "Docs parity verification failed: " + reason }],
+            structuredContent: { error_code: reason }, isError: true };
         }
       },
     );
