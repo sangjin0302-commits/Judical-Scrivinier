@@ -1,0 +1,8 @@
+{
+  "framework": "nextjs",
+  "functions": {
+    "app/mcp/route.js": {
+      "maxDuration": 60
+    }
+  }
+}
