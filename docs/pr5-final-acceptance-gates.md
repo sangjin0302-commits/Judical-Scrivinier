@@ -17,4 +17,11 @@ Status: WIP, Draft. Baseline `511e7c072e36433652ee1810ba71771a4193ed51`. This no
 2. Actual ChatGPT PR #5 E2E: Preview `/mcp` and OAuth metadata are intercepted by Vercel Authentication and redirect to its SSO before WorkOS/MCP. Connected ChatGPT app still exposes the old Production catalog (13 tools), not PR #5's six user tools. Existing-app read-only Docs calls and direct HTTP/SDK checks are not PR #5 ChatGPT acceptance. Do not replace existing test Production or remove Preview protection merely to claim a pass. A safe non-operating ChatGPT-accessible route must be established before retest.
 3. Full MCP/ChatGPT roundtrip p50/p95, including separate DB/network/AI timings, cannot be measured until the new endpoint is accessible. Last Railway selection-only reference: P1 292/326 ms, P2 305/318 ms (p50/p95, 12 samples); these are not whole grading latency.
 
+## 2026-10-30 access and cost check
+
+- Existing Vercel project has an exact branch Preview alias for PR #5, but Vercel Authentication intercepts it. A domain-specific Deployment Protection Exception is available; it would make only that branch alias publicly reachable at the Vercel layer. WorkOS must still protect the MCP. No exception has been applied.
+- Existing Production-only WorkOS environment settings are not available to Preview. Vercel's edit UI may allow widening the existing secret's environment scope without revealing its value, but this was only inspected in an unsaved form. Preview needs a distinct `MCP_RESOURCE_URL` audience and matching WorkOS resource registration. No credentials were read or copied, and no environment settings changed.
+- A separate Vercel project cannot inherit current project-scoped DB, grading-key and WorkOS secrets automatically. No new project was created.
+- Read-only billing UI: Vercel Oct 5–Nov 5 included $20 credit exhausted, on-demand approximately $3.97; Railway Oct 14–Nov 14 usage $7.95 on Hobby. Billing periods differ. Further redeploy/test usage may add cost; security exception and cost decision are pending user approval. No deployment or paid setting changed in this check.
+
 Do not merge PR #5 until all user acceptance gates pass. PR #1-#4 stay separate. Operating Sheets/Docs/Apps Script, production DB, existing concept data, PREPARED originals, and the 11 unapproved Docs differences remain unchanged.
