@@ -54,8 +54,11 @@ export function parseP1Document(document, sourceId) {
   for (let index = 0; index < paragraphs.length; index += 1) {
     const match = paragraphs[index].text.match(header);
     if (!match) continue;
-    const prompt = match[4]?.trim() ||
+    const rawPrompt = match[4]?.trim() ||
       paragraphs[index + 1]?.text.match(/^지문:\s*([\s\S]+)$/)?.[1]?.trim();
+    // Some source lines append an editorial correction after the question.
+    // Never expose that explanation as part of the issued prompt.
+    const prompt = rawPrompt?.split(/\s+정정 해설:\s*/)[0].trim();
     if (!prompt) throw new Error("P1 prompt missing after " + match[1]);
     problems.push({
       stableKey: sourceId + "|" + match[1].trim(),
@@ -73,6 +76,10 @@ export function parseP1Document(document, sourceId) {
 export function normalizedPrompt(value) {
   return String(value)
     .replace(/\*\*/g, "")
+    // Compare rendering escapes only; keep digits, negation, legal operators and words.
+    .replace(/\\(?=[~\[\]])/g, "")
+    .replace(/(▶ 풀이 대상:\s*현실답안[^\n]*?)\s*(?:\((\d+(?:\.\d+)?)점\)|\.(\d+(?:\.\d+)?)점)$/gm,
+      (_whole, heading, parenthesized, dotted) => `${heading.trim()} (${parenthesized || dotted}점)`)
     .replace(/\r/g, "")
     .split("\n")
     .map((line) => line.trim())
@@ -137,7 +144,10 @@ export function parseP2Document(document, sourceId) {
     }
     if (text === "현실답안 및 해설" && blockStart >= 0) {
       const block = paragraphs.slice(blockStart, index).map((item) => item.text);
-      activeBlock = block.join("\n");
+      // A few source revisions place model-answer headings before the section
+      // delimiter. Keep all targets, but exclude answer bodies from case facts.
+      const firstAnswer = block.findIndex((line) => answerPattern.test(line));
+      activeBlock = block.slice(0, firstAnswer < 0 ? block.length : firstAnswer).join("\n");
       for (let offset = 0; offset < block.length; offset += 1) {
         pushTarget(block[offset], paragraphs[blockStart + offset]);
       }
