@@ -1,11 +1,13 @@
 # 공식 민법 1차·2차 MCP
 
-WorkOS 인증 후 사용자에게 보이는 도구는 정확히 다섯 개다: `issueCivilP1`, `gradeCivilP1`, `issueCivilP2`, `prepareCivilP2Grade`, `commitCivilP2Grade`. 개념 강의·진도·회상 도구는 이 서버에 등록하지 않는다.
+WorkOS 인증 후 사용자에게 보이는 도구는 공식 문제 출제·채점 5개(`issueCivilP1`, `gradeCivilP1`, `issueCivilP2`, `prepareCivilP2Grade`, `commitCivilP2Grade`)와 시험 진행 조회 `getCivilExamProgress`다. 개념 강의·진도·회상 도구는 이 서버에 등록하지 않는다.
+
+1차 기본 10문항, 요청 시 1~40문항. 1·2차 모두 범위·취약·특정 안정키 지정 출제를 PostgreSQL에서 처리한다. 2차 지정 소문항은 사례 전체로 확장한다. 기존 Sheets의 사용자 선택권을 유지하되 과거 내부 시드·정렬·할당량은 재현하지 않는다.
 
 테스트 운영: `MCP_DATA_BACKEND=postgres`, 기존 Railway 테스트 DB 연결, 기존 Vercel Secret `GRADING_KEY_BASE64`·`GRADING_ENCRYPTION_KEY_ID`, WorkOS 리소스와 사용자 허용 목록을 재사용한다. 누락된 암호화 키를 서버가 생성하지 않는다. 비밀값은 GitHub·로그·채팅에 남기지 않는다.
 
-Google Docs 대조와 증분 미리보기는 `/api/maintenance/verify-google-docs-parity` 및 `/api/maintenance/preview-google-docs-sync`의 POST 요청으로만 실행한다. 두 경로는 기존 `MAINTENANCE_TOKEN`을 요구한다. 승인되지 않은 내용 변경은 적용하지 않는다.
+Google Docs 대조·증분 미리보기·후보 기록은 `/api/maintenance/verify-google-docs-parity`, `/api/maintenance/preview-google-docs-sync`, `/api/maintenance/detect-google-docs-sync`의 POST 요청으로만 실행한다. 세 경로는 기존 `MAINTENANCE_TOKEN`을 요구한다. 후보 기록은 자동 승인·적용하지 않는다.
 
-`npm ci`, `npm test`, `npm run build`로 코드 경계를 확인한다. 실제 P1/P2 답안·DB 기록·동시 요청·복구·ChatGPT 호출은 별도 인수시험이다. 형식 검사가 2차 의미 채점 정확성을 입증하지는 않는다. 기존 PREPARED 원답을 임의로 채점 완료 처리하지 않는다.
+`npm ci`, `npm test`, `npm run build`로 코드 경계를 확인한다. 임시 PostgreSQL 18에서 합성 P1/P2 출제·채점·원답·기록·멱등·소유권·Docs 적용/롤백은 확인했다. 실제 Railway와 ChatGPT 호출은 별도 인수시험이다. 2차 점수는 필수 의미요소 비율 × 최대 배점의 AI 학습평가이며 7요소 진단과 분리한다. 의미 판정 정확성 확인 전 P2 기록 게이트는 닫혀 있다. 기존 PREPARED 원답을 임의로 채점 완료 처리하지 않는다.
 
 기존 개념 DB 테이블과 기록은 삭제하거나 수정하지 않는다. 새 브랜치에서 개념 서비스 코드와 사용자 도구만 제외한다. 운영 Sheets·Docs·Apps Script 쓰기와 운영 DB 전환은 별도 승인 전 금지한다.

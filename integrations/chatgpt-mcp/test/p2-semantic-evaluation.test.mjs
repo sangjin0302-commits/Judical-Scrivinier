@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "../db/p2-semantic-evaluation.mjs";
+import { buildP2SemanticAudit, calculateP2LearningScore,
+  isNonSubstantiveP2Answer } from "../db/p2-semantic-evaluation.mjs";
 
 const source = { modelAnswer: "청구 요건을 검토한 뒤 결론을 쓴다.",
   rubric: "청구 요건 검토와 결론에 배점한다.", originalAnswer: "청구 요건은 충족된다. 결론은 인용이다." };
@@ -20,8 +21,8 @@ test("P2 audit reports element match separately from official point score", () =
   const result = buildP2SemanticAudit(base, source);
   assert.deepEqual(result.coreElementMatch, {
     matchedCount: 1, partialCount: 1, missingCount: 0, errorCount: 0,
-    totalCount: 2, rate: 0.5,
-    formula: "(MATCH + ALTERNATIVE_ACCEPTED) / total elements; partial reported separately",
+    totalCount: 2, rate: 0.75,
+    formula: "(MATCH + ALTERNATIVE_ACCEPTED + 0.5 × PARTIAL) / required elements",
   });
   assert.ok(!JSON.stringify(result).includes("청구 요건은 충족된다"));
   assert.ok(!JSON.stringify(result).includes("청구 요건을 검토한 뒤"));
@@ -89,7 +90,7 @@ test("P2 public precedent fixture keeps equivalent reasoning, error and official
     { originalAnswer: "취소 판결은 당사자 관계에만 미친다. 병은 관습법상 지상권을 얻는다.",
       status: "MATCH", excerpt: "당사자 관계에만 미친다", rate: 1 },
     { originalAnswer: "취소 판결 효력은 상대적이다. 결론은 모르겠다.",
-      status: "PARTIAL", excerpt: "취소 판결 효력은 상대적이다", rate: 0 },
+      status: "PARTIAL", excerpt: "취소 판결 효력은 상대적이다", rate: 0.5 },
     { originalAnswer: "취소 판결로 매매는 절대적으로 소급 무효가 된다.",
       status: "ERROR", excerpt: "절대적으로 소급 무효", rate: 0 },
   ];

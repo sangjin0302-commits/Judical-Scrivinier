@@ -4,11 +4,11 @@
 
 ## 사용자 도구
 
-`issueCivilP1`, `gradeCivilP1`, `issueCivilP2`, `prepareCivilP2Grade`, `commitCivilP2Grade`만 WorkOS 인증 MCP에 등록한다. 2차 채점기준은 원답 확정 후 해당 세트 소유자에게만 조회된다. 7요소 평정과 공식 배점 점수는 별개이며, 의미 판정의 정확성은 형식 검사만으로 보증되지 않는다.
+`issueCivilP1`, `gradeCivilP1`, `issueCivilP2`, `prepareCivilP2Grade`, `commitCivilP2Grade`만 WorkOS 인증 MCP에 등록한다. 2차 채점기준은 원답 확정 후 해당 세트 소유자에게만 조회된다. 2차 점수는 공식 모범답안 필수 의미요소 일치율에 소문항 최대 배점을 곱한 **AI 학습평가 점수**다. 7요소는 별도 진단이며 공식 채점자 점수가 아니다. 의미 판정 정확성은 형식 검사만으로 보증되지 않는다.
 
 ## 관리 경로
 
-Google Docs 대조·미리보기는 `MAINTENANCE_TOKEN`으로 보호한 별도 POST 경로다. 실제 적용은 승인된 후보와 유지보수 절차로 제한한다. 안정키·문제 버전·기존 답안·암호화 채점키를 보존한다. 운영 Sheets·Docs·Apps Script는 읽기 전용이다.
+Google Docs 대조·미리보기·후보 기록은 `MAINTENANCE_TOKEN`으로 보호한 별도 POST 경로다. 실제 적용은 승인된 후보와 유지보수 절차로 제한한다. 안정키·문제 버전·기존 답안·암호화 채점키를 보존한다. 기존 Sheets 사용자 출제 선택권은 PostgreSQL에서 구현하되 운영 Sheets·Docs·Apps Script 원본은 변경하지 않는다.
 
 ## 상태
 

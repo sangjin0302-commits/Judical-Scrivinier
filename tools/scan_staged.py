@@ -9,7 +9,7 @@ def git(*args):
     return subprocess.check_output(["git", *args])
 
 
-paths = [p.decode("utf-8") for p in git("diff", "--cached", "--name-only", "-z").split(b"\0") if p]
+paths = [p.decode("utf-8") for p in git("diff", "--cached", "--diff-filter=ACMR", "--name-only", "-z").split(b"\0") if p]
 patterns = {
     "private-key": rb"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     "provider-token": rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{24,}|AIza[A-Za-z0-9_-]{30,})",

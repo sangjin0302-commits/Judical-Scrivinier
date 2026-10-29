@@ -1,0 +1,1 @@
+This project keeps no local Codex credential or model override. Use `AGENTS.md` for exam-only scope and `.codex/agents/` for safe parallel file ownership. Runtime credentials belong only in existing cloud secret stores or ignored local private paths.

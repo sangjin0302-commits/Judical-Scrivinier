@@ -114,3 +114,48 @@ test("P2 parser excludes answer body that precedes explanation delimiter", () =>
   assert.equal(parsed.problems[0].promptText.includes("모범답안:"), false);
   assert.match(parsed.problems[0].promptText, /법정지상권 취득 여부/);
 });
+
+test("existing P1 format accepts a later new OX without changing earlier stable key", () => {
+  const original = [
+    paragraph("[민법25032] 기존 논점 | O", 1),
+    paragraph("지문: 기존 공식 지문.", 30),
+  ];
+  const old = parseP1Document({ body: { content: original } }, "SRC-CIV-004");
+  const next = parseP1Document({ body: { content: [
+    ...original,
+    paragraph("[민법26001] 새 논점 | X", 70),
+    paragraph("지문: 새 공식 지문.", 100),
+  ] } }, "SRC-CIV-004");
+  assert.equal(next.problems.length, 2);
+  assert.equal(next.problems[0].stableKey, old.problems[0].stableKey);
+  assert.equal(next.problems[1].stableKey, "SRC-CIV-004|민법26001");
+  assert.equal(next.problems[1].promptText, "새 공식 지문.");
+  assert.deepEqual(next.conflictingKeys, []);
+});
+
+test("existing P2 case format keeps all subquestions together and excludes answer text", () => {
+  const doc = { body: { content: [
+    paragraph("2026년도 (제32회)", 1),
+    paragraph("문 3", 30),
+    paragraph("문제", 40),
+    paragraph("[기본적 사실관계]", 50),
+    paragraph("甲이 乙에게 토지를 매도하였다.", 70),
+    paragraph("가 계약의 효력을 논하시오. (10점)", 100),
+    paragraph("나 丙의 청구를 논하시오. (15점)", 150),
+    paragraph("현실답안 및 해설", 200),
+    paragraph("현실답안 3 가 (10점)", 220),
+    paragraph("모범답안: 비공개 내용 가", 250),
+    paragraph("현실답안 3 나 (15점)", 280),
+    paragraph("모범답안: 비공개 내용 나", 310),
+  ] } };
+  const parsed = parseP2Document(doc, "SRC-CIV-005");
+  assert.equal(parsed.problems.length, 2);
+  assert.deepEqual(parsed.problems.map((item) => item.stableKey), [
+    "SRC-CIV-005|2026-제32회-문3-소문항1",
+    "SRC-CIV-005|2026-제32회-문3-소문항2",
+  ]);
+  assert.deepEqual(parsed.problems.map((item) => item.maxPoints), [10, 15]);
+  assert.ok(parsed.problems.every((item) => item.promptText.includes("甲이 乙에게 토지를 매도하였다.")));
+  assert.ok(parsed.problems.every((item) => !item.promptText.includes("모범답안:")));
+  assert.deepEqual(parsed.conflictingKeys, []);
+});

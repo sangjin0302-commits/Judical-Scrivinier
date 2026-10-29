@@ -88,6 +88,27 @@ test("detector separates new, modified, unchanged, duplicate, and deletion candi
   assert.equal(byKind.MODIFIED[0].payload.baseVersionId, "v-modified");
 });
 
+test("unapproved old modification does not block a separate new P2 subquestion", () => {
+  const oldKey = "SRC-CIV-005|2025-제31회-문1-소문항1";
+  const newKey = "SRC-CIV-005|2026-제32회-문3-소문항1";
+  const current = [{ ...problem({ stableKey: oldKey, stage: "P2", promptText: "기존 사례", maxPoints: 10 }),
+    promptDigest: sha256("기존 사례"), currentVersionId: "old-version" }];
+  const incoming = [
+    problem({ stableKey: oldKey, stage: "P2", promptText: "수정된 기존 사례", maxPoints: 10,
+      answerDigest: null, explanationDigest: null, gradingKeyVersion: null,
+      gradingFieldsKnown: false }),
+    problem({ stableKey: newKey, stage: "P2", promptText: "새 사례", maxPoints: 15,
+      answerDigest: null, explanationDigest: null, gradingKeyVersion: null,
+      gradingFieldsKnown: false }),
+  ];
+  const candidates = classifyDocumentSnapshot(incoming, current, "doc-p2");
+  assert.deepEqual(candidates.map((item) => [item.stableKey, item.kind]), [
+    [oldKey, "MODIFIED"], [newKey, "NEW"],
+  ]);
+  assert.equal(candidates[0].payload.baseVersionId, "old-version");
+  assert.equal(candidates[1].payload.gradingKeyVersion, null);
+});
+
 test("Sheets baseline metadata and rendering-only changes do not create Docs edits", () => {
   const current = [{
     ...problem({ stableKey: "SRC-CIV-004|1", sourceLocator: "sheet:42",
@@ -251,7 +272,8 @@ test("issued sets read immutable problem version with legacy fallback in one que
       }
       if (sql.includes("FROM issue_sets") && sql.includes("request_id")) {
         return { rowCount: 1, rows: [{ set_id: "P1-old", request_digest: sha256({
-          requestId: "replay-1", count: 10, mode: "전범위", keyword: "",
+          requestId: "replay-1", count: 10, mode: "전범위", keyword: "", specificKeys: [],
+          questionType: "", year: "", session: "", questionNumber: "", lowScoreBelow: null,
         }) }] };
       }
       if (sql.includes("FROM issue_set_items")) {

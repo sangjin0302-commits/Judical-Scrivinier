@@ -9,6 +9,21 @@ test("grading key is never generated when the configured key is missing", () => 
   assert.throws(() => gradingKey({ GRADING_KEY_BASE64: Buffer.alloc(31).toString("base64") }), /32 bytes/);
 });
 
+test("progress executor requires authenticated owner and uses no grading secret", async () => {
+  const queries = [];
+  const pool = { async query(sql, values) {
+    queries.push({ sql, values });
+    return { rows: [] };
+  } };
+  const execute = createPostgresExecutor({ pool, env: {} });
+  await assert.rejects(() => execute("getCivilExamProgress", {}, {}), /authenticated owner/);
+  assert.equal(queries.length, 0);
+  const result = await execute("getCivilExamProgress", { stage: "P1" }, { ownerId: "workos-owner" });
+  assert.deepEqual(result.items, []);
+  assert.equal(queries[0].values[0], "CIVIL");
+  assert.equal(queries[0].values[1], "P1");
+});
+
 test("unverified P2 grade commit is closed without an explicit accuracy gate", async () => {
   let connected = false;
   const execute = createPostgresExecutor({ pool: { async connect() { connected = true; } },
@@ -27,6 +42,7 @@ test("new issue sets snapshot exact grading key version and encryption key id", 
     max_points: null,
     source_version: "source-v1",
     selection_metadata: {},
+    problem_version_id: `version-${index + 1}`,
     grading_key_version: "source-v1",
     grading_encryption_key_id: "key-v2",
   }));
@@ -35,7 +51,8 @@ test("new issue sets snapshot exact grading key version and encryption key id", 
       if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rowCount: 0, rows: [] };
       if (sql.includes("pg_advisory_xact_lock")) advisoryLocks.push(values[0]);
       if (sql.includes("FROM issue_sets") && sql.includes("request_id")) return { rowCount: 0, rows: [] };
-      if (sql.includes("FROM problems p JOIN private_grading_keys")) return { rowCount: 10, rows: candidates };
+      if (sql.includes("max(source_order)")) return { rowCount: 1, rows: [{ max_order: 10 }] };
+      if (sql.includes("FROM problems p JOIN LATERAL")) return { rowCount: 10, rows: candidates };
       if (sql.includes("INSERT INTO issue_set_items")) itemInserts.push(values);
       return { rowCount: 1, rows: [] };
     },
@@ -51,6 +68,7 @@ test("new issue sets snapshot exact grading key version and encryption key id", 
   assert.equal(advisoryLocks.length, 1);
   assert.match(advisoryLocks[0], /^[0-9a-f]{64}$/);
   assert.ok(itemInserts.every((values) => values[4] === "source-v1" && values[5] === "key-v2"));
+  assert.ok(itemInserts.every((values, index) => values[6] === `version-${index + 1}`));
 });
 
 test("AES-256-GCM payloads decrypt only with the transferred key", () => {
@@ -95,14 +113,14 @@ test("P2 commit validates official and original evidence before any grade write"
         { submission_id: "submission-1", state: committedDigest ? "COMMITTED" : "PREPARED",
           grade_digest: committedDigest }] };
       if (sql.includes("FROM private_grading_keys")) return { rowCount: 1, rows: [
-        { key_version: "v1", encryption_key_id: "key-v1", encrypted_payload: encrypted,
+        { stable_key: "p2-1", key_version: "v1", encryption_key_id: "key-v1", encrypted_payload: encrypted,
           payload_digest: crypto.createHash("sha256").update(plaintext).digest("hex") }] };
       if (sql.includes("FROM original_answers")) return { rowCount: 1, rows: [
         { stable_key: "p2-1", answer_text: originalAnswer }] };
       if (sql.includes("INSERT INTO p2_grades")) storedPayload = JSON.parse(values[15]);
       if (sql.includes("UPDATE submissions SET grade_digest")) committedDigest = values[0];
       if (sql.includes("FROM p2_grades")) return { rowCount: 1, rows: [
-        { stable_key: "p2-1", awarded_points: 5, max_points: 10, evaluation_payload: storedPayload }] };
+        { stable_key: "p2-1", awarded_points: 10, max_points: 10, evaluation_payload: storedPayload }] };
       return { rowCount: 1, rows: [] };
     },
     release() {},
@@ -110,19 +128,20 @@ test("P2 commit validates official and original evidence before any grade write"
   const executor = createPostgresExecutor({ pool: { connect: async () => client },
     env: { GRADING_KEY_BASE64: key.toString("base64"), GRADING_ENCRYPTION_KEY_ID: "key-v1",
       P2_GRADE_COMMIT_ENABLED: "true" } });
-  const evaluation = { key: "p2-1", maxPoints: 10, awardedPoints: 5,
+  const evaluation = { key: "p2-1", maxPoints: 10, awardedPoints: 10,
     scores: { issue: 1, outline: 1, law: 1, precedent: 0, application: 1, conclusion: 1, expression: 1 },
     errorType: "none", checkType: "review", nextReview: "3 days",
     semanticAnalysis: { elements: [{ category: "ELEMENT", criterion: "요건", status: "MATCH",
       modelExcerpt: "요건", answerExcerpt: "요건이 충족된다", explanation: "요건을 확인했다" }],
       matchedLaw: ["요건"], missingLaw: [], misappliedLaw: [], improvement: "근거를 보강한다",
       decompositionRationale: "공식 자료의 요건을 필수 요소로 추렸다",
-      scoreRationale: "공식 요건 배점 기준에 따라 5점을 인정했다" } };
+      scoreRationale: "모범답안의 필수 요건을 모두 인정했다" } };
   await assert.rejects(() => executor("commitCivilP2Grade", { setId: "set-1", evaluations: [
     { ...evaluation, semanticAnalysis: { ...evaluation.semanticAnalysis,
       elements: [{ ...evaluation.semanticAnalysis.elements[0], modelExcerpt: "없는 공식 근거" }] } },
   ] }, { ownerId: "user-1" }), /model evidence absent/);
   assert.equal(statements.filter((sql) => sql.includes("INSERT INTO p2_grades")).length, 0);
+  assert.equal(statements.filter((sql) => sql.includes("INSERT INTO exam_review_due")).length, 0);
   assert.equal(statements.at(-1), "ROLLBACK");
   statements.length = 0;
   await assert.rejects(() => executor("commitCivilP2Grade", { setId: "set-1", evaluations: [
@@ -142,8 +161,10 @@ test("P2 commit validates official and original evidence before any grade write"
   const result = await executor("commitCivilP2Grade", { setId: "set-1", evaluations: [evaluation] },
     { ownerId: "user-1" });
   assert.equal(result.summaries[0].coreElementMatch.rate, 1);
-  assert.equal(result.summaries[0].awardedPoints, 5);
+  assert.equal(result.summaries[0].awardedPoints, 10);
+  assert.equal(result.summaries[0].learningScore.rawPoints, 10);
   assert.equal(statements.filter((sql) => sql.includes("INSERT INTO p2_grades")).length, 1);
+  assert.equal(statements.filter((sql) => sql.includes("INSERT INTO exam_review_due")).length, 1);
   assert.equal(statements.at(-1), "COMMIT");
   statements.length = 0;
   const replay = await executor("commitCivilP2Grade", { setId: "set-1", evaluations: [evaluation] },
@@ -151,4 +172,5 @@ test("P2 commit validates official and original evidence before any grade write"
   assert.equal(replay.replayed, true);
   assert.deepEqual(replay.summaries[0].coreElementMatch, result.summaries[0].coreElementMatch);
   assert.equal(statements.filter((sql) => sql.includes("INSERT INTO p2_grades")).length, 0);
+  assert.equal(statements.filter((sql) => sql.includes("INSERT INTO exam_review_due")).length, 0);
 });

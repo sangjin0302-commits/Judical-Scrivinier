@@ -1,0 +1,11 @@
+# P2 model answer ratio score contract
+
+The user-approved scoring policy is an **AI learning evaluation**, not a score awarded by an official examiner. The official model answer and existing rubric are the sole source. No external law research or invented criterion weights are required.
+
+1. Save the original answer first. Fetch the corresponding protected model answer/rubric only for that submitted set.
+2. Decompose the official source into nonduplicate required meaning elements (issue, rule, element, application, conclusion as present). Each element must carry an exact source excerpt and a necessity explanation. Do not divide by sentence or word count.
+3. Compare the original answer semantically. `MATCH` and sourced `ALTERNATIVE_ACCEPTED` = 1; `PARTIAL` = 0.5; `MISSING` and `ERROR` = 0. Exact answer excerpts anchor nonmissing classifications. Alternative reasoning needs a review reference. Pure abstention has every element `MISSING` and every seven-element diagnostic 0. For partial case submissions, `normalizeP2Submission` keeps only supplied originals and marks absent issued subquestions `UNSUBMITTED`; literal `모르겠다` remains `SUBMITTED`. Do not manufacture a text answer for an omitted subquestion. An `UNSUBMITTED` audit has no original and zero matched elements/points.
+4. `calculateP2LearningScore(elements,maxPoints)` returns half-unit numerator/denominator, exact raw fraction, numeric raw points, and a display rounded to two decimal places. `buildP2SemanticAudit` includes this as `learningScore` when passed `maxPoints`; an optional submitted `awardedPoints` must equal the computed displayed points.
+5. Seven diagnostic fields remain separate; they do not add to or reweight the ratio score. Preserve raw calculation, displayed score, maximum, method, source digest, evidence digests, and decomposition rationale with the immutable grading record.
+
+The function validates evidence anchors and arithmetic. It **cannot prove semantic correctness** of a model's classification or that the element list exhausts the official answer. Acceptance still needs the private official source checked against actual and synthetic answers, repeated consistency review, and a test DB commit/replay/rollback drill. Synthetic answers must never become user learning history. Existing `P2_GRADE_COMMIT_ENABLED` gate stays closed until those checks pass.

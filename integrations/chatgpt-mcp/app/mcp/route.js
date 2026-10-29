@@ -24,13 +24,42 @@ const ownerIdFromContext = (ctx) => ctx?.http?.authInfo?.extra?.userId;
 const baseHandler = createMcpHandler(
   (server) => {
     server.registerTool(
+      "getCivilExamProgress",
+      {
+        title: "민법 공식 문제 진행 현황",
+        description: "본인의 문제별 풀이횟수·최근 점수·복습일과 2차 숙련·통과·졸업을 읽기 전용으로 조회합니다. 불확실한 이관 기록은 미확인으로 표시합니다.",
+        inputSchema: z.object({
+          stage: z.enum(["P1", "P2"]).optional(),
+          cursor: z.string().max(300).optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+        }),
+        annotations: readAnnotations,
+        securitySchemes: oauthSecurity,
+        _meta: { securitySchemes: oauthSecurity },
+      },
+      async (input, ctx) => callTool("getCivilExamProgress", input, {
+        ownerId: ownerIdFromContext(ctx),
+      }),
+    );
+
+    server.registerTool(
       "issueCivilP1",
       {
         title: "민법 1차 공식 문제 출제",
         description:
-          "독립 테스트 문제은행에서 공식 OX 10문항을 출제하고 세트를 기록합니다. 같은 requestId 재시도는 같은 세트를 반환합니다.",
+          "PostgreSQL 공식 OX를 기본 10문항, 요청 시 1~40문항 출제합니다. 범위·취약·안정키 지정 가능. 같은 requestId 재시도는 같은 세트를 반환합니다.",
         inputSchema: z.object({
           requestId: z.string().min(1).max(200),
+          count: z.number().int().min(1).max(40).optional(),
+          mode: z.enum(["전범위", "범위지정", "취약", "문제지정", "미풀이", "오답",
+            "낮은점수", "복습대상", "원문변경"]).optional(),
+          keyword: z.string().max(100).optional(),
+          questionType: z.string().max(100).optional(),
+          year: z.string().regex(/^[0-9]{4}$/).optional(),
+          session: z.string().regex(/^[1-9][0-9]{0,2}$/).optional(),
+          questionNumber: z.string().regex(/^[1-9][0-9]{0,2}$/).optional(),
+          lowScoreBelow: z.number().positive().max(1).optional(),
+          specificKeys: z.array(z.string().min(1).max(250)).min(1).max(40).optional(),
         }),
         annotations: writeAnnotations,
         securitySchemes: oauthSecurity,
@@ -46,10 +75,10 @@ const baseHandler = createMcpHandler(
       {
         title: "민법 1차 공식 답안 채점",
         description:
-          "출제된 세트의 O/X 답안 10개를 제출하고 공식 채점 결과와 학습이력을 기록합니다. 답안 제출 전에는 호출하지 않습니다.",
+          "출제된 세트의 문항 수만큼 O/X 답안을 제출하고 채점 결과와 풀이이력을 기록합니다. 답안 제출 전에는 호출하지 않습니다.",
         inputSchema: z.object({
           setId: z.string().min(1).max(100),
-          answers: z.array(z.enum(["O", "X"])).length(10),
+          answers: z.array(z.enum(["O", "X"])).min(1).max(40),
         }),
         annotations: writeAnnotations,
         securitySchemes: oauthSecurity,
@@ -62,9 +91,17 @@ const baseHandler = createMcpHandler(
 
     server.registerTool(
       "issueCivilP2",
-      { title: "민법 2차 공식 사례 출제", description: "독립 테스트 문제은행에서 공식 2차 사례와 소문항을 출제합니다.",
+      { title: "민법 2차 공식 사례 출제", description: "PostgreSQL에서 사례를 선택하고 해당 사례의 모든 소문항을 함께 출제합니다.",
         inputSchema: z.object({ requestId: z.string().min(1).max(200), caseCount: z.number().int().min(1).max(20).optional(),
-          mode: z.enum(["전범위", "범위지정", "취약"]).optional(), keyword: z.string().max(200).optional() }),
+          mode: z.enum(["전범위", "범위지정", "취약", "문제지정", "미풀이", "오답",
+            "낮은점수", "복습대상", "원문변경"]).optional(),
+          keyword: z.string().max(100).optional(),
+          questionType: z.string().max(100).optional(),
+          year: z.string().regex(/^[0-9]{4}$/).optional(),
+          session: z.string().regex(/^[1-9][0-9]{0,2}$/).optional(),
+          questionNumber: z.string().regex(/^[1-9][0-9]{0,2}$/).optional(),
+          lowScoreBelow: z.number().positive().max(1).optional(),
+          specificKeys: z.array(z.string().min(1).max(250)).min(1).max(20).optional() }),
         annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
       async (input, ctx) => callTool("issueCivilP2", input, {
         ownerId: ownerIdFromContext(ctx),
@@ -74,7 +111,7 @@ const baseHandler = createMcpHandler(
     server.registerTool(
       "prepareCivilP2Grade",
       { title: "민법 2차 원답 제출 및 채점기준 조회",
-        description: "사용자의 실제 원답 전체를 확정한 뒤에만 선택된 소문항의 공식 모범답안과 채점기준을 조회합니다.",
+        description: "실제 작성한 소문항 원답을 변경 없이 확정한 뒤 공식 모범답안과 채점기준을 조회합니다. 빠진 소문항은 미제출로 구분하며 답안을 만들지 않습니다.",
         inputSchema: z.object({ setId: z.string().min(1).max(100), answers: z.array(z.object({
           key: z.string().min(1).max(300), text: z.string().min(1).max(50000) })).min(1) }),
         annotations: writeAnnotations, securitySchemes: oauthSecurity, _meta: { securitySchemes: oauthSecurity } },
@@ -86,9 +123,10 @@ const baseHandler = createMcpHandler(
     server.registerTool(
       "commitCivilP2Grade",
       { title: "민법 2차 AI 학습평가 기록 확정",
-        description: "제출된 원답을 공식 모범답안 핵심요소와 의미 단위로 대조합니다. 근거 발췌문을 확인하고 핵심요소 일치율과 기존 7요소 배점 점수를 분리해 기록합니다.",
+        description: "원답 확정 뒤 공식 모범답안의 중복 없는 필수 의미요소와 대조합니다. 완전 1·부분 0.5·누락/오류 0 비율에 최대 배점을 곱한 AI 학습평가 점수를 서버에서 계산합니다. 7요소는 별도 진단이며 공식 채점자 점수가 아닙니다.",
         inputSchema: z.object({ setId: z.string().min(1).max(100), evaluations: z.array(z.object({
-          key: z.string().min(1).max(300), maxPoints: z.number().positive(), awardedPoints: z.number().nonnegative(),
+          key: z.string().min(1).max(300), maxPoints: z.number().positive(),
+          awardedPoints: z.number().nonnegative().optional(),
           scores: z.object({ issue: z.number().int().min(0).max(2), outline: z.number().int().min(0).max(2),
             law: z.number().int().min(0).max(2), precedent: z.number().int().min(0).max(2),
             application: z.number().int().min(0).max(2), conclusion: z.number().int().min(0).max(2),

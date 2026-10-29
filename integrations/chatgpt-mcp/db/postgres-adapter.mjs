@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 import pg from "pg";
 import { postgresConnectionOptions } from "./pg-connection.mjs";
+import { getExamProgress } from "./exam-progress.mjs";
 import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "./p2-semantic-evaluation.mjs";
+import { selectExamCandidates } from "./fast-exam-selection.mjs";
+import { normalizeP2Submission } from "./p2-submission-contract.mjs";
 
 const SUBJECT = "CIVIL";
 const P2_SCORE_FIELDS = ["issue", "outline", "law", "precedent", "application", "conclusion", "expression"];
@@ -95,8 +98,11 @@ async function setItems(client, setId) {
 }
 
 async function issue(pool, ownerId, stage, input, configuredKeyId) {
-  const count = stage === "P1" ? 10 : (input.caseCount ?? 1);
-  const request = { requestId: input.requestId, count, mode: input.mode || "전범위", keyword: input.keyword || "" };
+  const count = stage === "P1" ? (input.count ?? 10) : (input.caseCount ?? 1);
+  const request = { requestId: input.requestId, count, mode: input.mode || "전범위",
+    keyword: input.keyword || "", specificKeys: input.specificKeys || [],
+    questionType: input.questionType || "", year: input.year || "", session: input.session || "",
+    questionNumber: input.questionNumber || "", lowScoreBelow: input.lowScoreBelow ?? null };
   const requestDigest = digest(request);
   return inTransaction(pool, async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",
@@ -109,35 +115,32 @@ async function issue(pool, ownerId, stage, input, configuredKeyId) {
       if (previous.rows[0].request_digest !== requestDigest) throw new Error("changed issue payload rejected");
       const items = await setItems(client, previous.rows[0].set_id);
       return { ok: true, replayed: true, setId: previous.rows[0].set_id, count: items.length,
-        questions: items.map(publicProblem) };
+        ...(stage === "P2" ? { caseCount: count } : {}), questions: items.map(publicProblem) };
     }
-    const keyword = String(input.keyword || "").trim();
-    const candidates = await client.query(
-      `SELECT p.stable_key, p.prompt_text, p.max_points, p.source_version, p.selection_metadata,
-              k.key_version AS grading_key_version, k.encryption_key_id AS grading_encryption_key_id
-         FROM problems p JOIN private_grading_keys k
-           ON k.subject_id=p.subject_id AND k.stable_key=p.stable_key
-        WHERE p.subject_id=$1 AND p.stage=$2 AND p.published=true
-          AND k.verification_state='verified' AND k.active_for_grading=true
-          AND k.encryption_key_id=$5
-          AND ($3='' OR p.prompt_text ILIKE '%' || $3 || '%' OR p.selection_metadata::text ILIKE '%' || $3 || '%')
-        ORDER BY md5(p.stable_key || $4) LIMIT $6`, [SUBJECT, stage, keyword, input.requestId, configuredKeyId, count]);
-    if (candidates.rowCount !== count) throw new Error(`not enough published ${stage} problems`);
+    const selected = await selectExamCandidates(client, { stage, ownerId, requestId: input.requestId,
+      keyId: configuredKeyId, mode: input.mode, keyword: input.keyword, count: input.count,
+      caseCount: input.caseCount, specificKeys: input.specificKeys,
+      questionType: input.questionType, year: input.year, session: input.session,
+      questionNumber: input.questionNumber, lowScoreBelow: input.lowScoreBelow });
+    const candidates = { rows: selected, rowCount: selected.length };
     const setId = `${stage}-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
     await client.query(
       `INSERT INTO issue_sets(set_id,owner_id,subject_id,stage,request_id,request_digest)
        VALUES($1,$2,$3,$4,$5,$6)`, [setId, ownerId, SUBJECT, stage, input.requestId, requestDigest]);
     for (let index = 0; index < candidates.rows.length; index++) {
       await client.query(
-        `INSERT INTO issue_set_items(set_id,subject_id,position,stable_key,key_version,encryption_key_id)
-         VALUES($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO issue_set_items(set_id,subject_id,position,stable_key,key_version,encryption_key_id,
+          problem_version_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7)`,
         [setId, SUBJECT, index + 1, candidates.rows[index].stable_key,
-          candidates.rows[index].grading_key_version, candidates.rows[index].grading_encryption_key_id]);
+          candidates.rows[index].grading_key_version, candidates.rows[index].grading_encryption_key_id,
+          candidates.rows[index].problem_version_id]);
     }
     await client.query(
       `INSERT INTO audit_events(actor_id,subject_id,action,aggregate_type,aggregate_id,request_id,payload_digest)
        VALUES($1,$2,'ISSUE','issue_set',$3,$4,$5)`, [ownerId, SUBJECT, setId, input.requestId, requestDigest]);
-    return { ok: true, replayed: false, setId, count, questions: candidates.rows.map(publicProblem) };
+    return { ok: true, replayed: false, setId, count: candidates.rowCount,
+      ...(stage === "P2" ? { caseCount: count } : {}), questions: candidates.rows.map(publicProblem) };
   });
 }
 
@@ -147,22 +150,29 @@ function publicProblem(row, index) {
 }
 
 async function latestKeys(client, items, configuredKeyId) {
-  const result = new Map();
-  for (const item of items) {
-    const snapshotted = Boolean(item.grading_key_version && item.grading_encryption_key_id);
-    const keyVersion = item.grading_key_version || item.source_version;
-    const encryptionKeyId = item.grading_encryption_key_id || configuredKeyId;
-    if (encryptionKeyId !== configuredKeyId) throw new Error("set grading key is not available in this deployment");
-    const key = await client.query(
-      `SELECT key_version, encryption_key_id, encrypted_payload, payload_digest FROM private_grading_keys
-       WHERE subject_id=$1 AND stable_key=$2
-         AND verification_state='verified'
-         AND encryption_key_id=$3 AND key_version=$4
-         AND ($5::boolean=false OR active_for_grading=true)
-       LIMIT 1`,
-      [SUBJECT, item.stable_key, encryptionKeyId, keyVersion, !snapshotted]);
-    if (key.rowCount !== 1) throw new Error(`grading key missing: ${item.stable_key}`);
-    result.set(item.stable_key, key.rows[0]);
+  const wanted = items.map((item) => ({ stableKey: item.stable_key,
+    keyVersion: item.grading_key_version || item.source_version,
+    encryptionKeyId: item.grading_encryption_key_id || configuredKeyId,
+    legacy: !(item.grading_key_version && item.grading_encryption_key_id) }));
+  if (wanted.some((item) => item.encryptionKeyId !== configuredKeyId)) {
+    throw new Error("set grading key is not available in this deployment");
+  }
+  const keys = await client.query(
+    `WITH wanted AS (
+       SELECT * FROM unnest($2::text[],$3::text[],$4::text[],$5::boolean[])
+         AS w(stable_key,key_version,encryption_key_id,legacy)
+     )
+     SELECT k.stable_key,k.key_version,k.encryption_key_id,k.encrypted_payload,k.payload_digest
+       FROM private_grading_keys k JOIN wanted w
+         ON k.stable_key=w.stable_key AND k.key_version=w.key_version
+        AND k.encryption_key_id=w.encryption_key_id
+      WHERE k.subject_id=$1 AND k.verification_state='verified'
+        AND (NOT w.legacy OR k.active_for_grading=true)`,
+    [SUBJECT, wanted.map((item) => item.stableKey), wanted.map((item) => item.keyVersion),
+      wanted.map((item) => item.encryptionKeyId), wanted.map((item) => item.legacy)]);
+  const result = new Map(keys.rows.map((row) => [row.stable_key, row]));
+  if (result.size !== wanted.length || keys.rowCount !== wanted.length) {
+    throw new Error("one or more snapshotted grading keys are missing");
   }
   return result;
 }
@@ -172,7 +182,9 @@ async function gradeP1(pool, ownerId, input, key, keyId) {
   return inTransaction(pool, async (client) => {
     await ownedSet(client, input.setId, ownerId, "P1");
     const items = await setItems(client, input.setId);
-    if (items.length !== 10 || input.answers.length !== items.length) throw new Error("answer count mismatch");
+    if (items.length < 1 || items.length > 40 || input.answers.length !== items.length) {
+      throw new Error("answer count mismatch");
+    }
     const prior = await client.query("SELECT * FROM submissions WHERE set_id=$1 FOR UPDATE", [input.setId]);
     if (prior.rowCount) {
       if (prior.rows[0].answer_digest !== answerDigest) throw new Error("changed answer payload rejected");
@@ -212,6 +224,7 @@ async function gradeP1(pool, ownerId, input, key, keyId) {
       results.push({ key: item.stable_key, correct, answer: expected, rationale: payload.rationale || "" });
     }
     const gradeDigest = digest(results.map(({ key: stableKey, correct }) => ({ key: stableKey, correct })));
+    await scheduleExamReviewDue(client, ownerId, results.map((item) => item.key), submissionId);
     await finalizeSubmission(client, ownerId, input.setId, submissionId, gradeDigest, "P1_GRADED", results);
     return { ok: true, replayed: false, setId: input.setId,
       correct: results.filter((item) => item.correct).length, total: results.length, results };
@@ -219,18 +232,17 @@ async function gradeP1(pool, ownerId, input, key, keyId) {
 }
 
 async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
-  const normalized = [...input.answers].sort((a, b) => a.key.localeCompare(b.key));
-  const answerDigest = digest(normalized);
   const prepared = await inTransaction(pool, async (client) => {
     await ownedSet(client, input.setId, ownerId, "P2");
     const items = await setItems(client, input.setId);
-    if (items.length !== normalized.length || items.some((item) => !normalized.find((a) => a.key === item.stable_key))) {
-      throw new Error("answers must exactly match the issued P2 set");
-    }
+    const normalizedSubmission = normalizeP2Submission(items.map((item) => item.stable_key), input.answers);
+    const normalized = normalizedSubmission.submittedAnswers;
+    const answerDigest = digest(normalized);
     const prior = await client.query("SELECT * FROM submissions WHERE set_id=$1 FOR UPDATE", [input.setId]);
     if (prior.rowCount) {
       if (prior.rows[0].answer_digest !== answerDigest) throw new Error("changed answer payload rejected");
-      return { replayed: true, submissionId: prior.rows[0].submission_id, items };
+      return { replayed: true, submissionId: prior.rows[0].submission_id, items,
+        subquestions: normalizedSubmission.subquestions };
     }
     const submission = await client.query(
       `INSERT INTO submissions(set_id,owner_id,subject_id,request_id,answer_digest)
@@ -245,12 +257,14 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
       `INSERT INTO audit_events(actor_id,subject_id,action,aggregate_type,aggregate_id,request_id,payload_digest)
        VALUES($1,$2,'P2_PREPARE','submission',$3,$4,$5)`,
       [ownerId, SUBJECT, submission.rows[0].submission_id, `prepare:${input.setId}`, answerDigest]);
-    return { replayed: false, submissionId: submission.rows[0].submission_id, items };
+    return { replayed: false, submissionId: submission.rows[0].submission_id, items,
+      subquestions: normalizedSubmission.subquestions };
   });
   const client = await pool.connect();
   try {
     const keys = await latestKeys(client, prepared.items, keyId);
     return { ok: true, replayed: prepared.replayed, setId: input.setId,
+      subquestions: prepared.subquestions,
       rubrics: prepared.items.map((item) => {
         const keyRow = keys.get(item.stable_key);
         const payload = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
@@ -280,9 +294,11 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
           const audit = grade.evaluation_payload?.semanticAudit;
           return { key: grade.stable_key, awardedPoints: Number(grade.awarded_points),
             maxPoints: Number(grade.max_points), ...(audit ? {
+              submissionStatus: audit.submissionStatus,
               coreElementMatch: audit.coreElementMatch, matchedLaw: audit.matchedLaw,
               missingLaw: audit.missingLaw, misappliedLaw: audit.misappliedLaw,
               improvement: audit.improvement, scoreRationale: audit.scoreRationale,
+              learningScore: audit.learningScore,
             } : {}) };
         }) };
     }
@@ -297,34 +313,43 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
     for (const evaluation of evaluations) {
       const item = items.find((candidate) => candidate.stable_key === evaluation.key);
       if (Number(evaluation.maxPoints) !== Number(item.max_points)) throw new Error(`maxPoints mismatch: ${evaluation.key}`);
-      if (!Number.isFinite(evaluation.awardedPoints) || evaluation.awardedPoints < 0 ||
-          evaluation.awardedPoints > Number(item.max_points)) throw new Error("awarded points outside official maximum");
+      if (evaluation.awardedPoints != null &&
+          (!Number.isFinite(evaluation.awardedPoints) || evaluation.awardedPoints < 0 ||
+            evaluation.awardedPoints > Number(item.max_points))) {
+        throw new Error("awarded points outside official maximum");
+      }
       if (!evaluation.scores || P2_SCORE_FIELDS.some((field) =>
         !Number.isInteger(evaluation.scores[field]) || evaluation.scores[field] < 0 || evaluation.scores[field] > 2)) {
         throw new Error("invalid P2 seven-element scores");
       }
-      if (isNonSubstantiveP2Answer(originalsByKey.get(evaluation.key)) &&
+      const submissionStatus = originalsByKey.has(evaluation.key) ? "SUBMITTED" : "UNSUBMITTED";
+      if ((submissionStatus === "UNSUBMITTED" ||
+          isNonSubstantiveP2Answer(originalsByKey.get(evaluation.key))) &&
           P2_SCORE_FIELDS.some((field) => evaluation.scores[field] !== 0)) {
-        throw new Error("non-substantive answer cannot earn seven-element credit");
+        throw new Error("unsubmitted or non-substantive answer cannot earn seven-element credit");
       }
       const keyRow = keys.get(item.stable_key);
       const gradingSource = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
         gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
       const semanticAudit = buildP2SemanticAudit(evaluation.semanticAnalysis, {
         modelAnswer: gradingSource.answer, rubric: gradingSource.rubric,
-        originalAnswer: originalsByKey.get(item.stable_key), awardedPoints: evaluation.awardedPoints });
+        originalAnswer: originalsByKey.get(item.stable_key), maxPoints: Number(item.max_points),
+        awardedPoints: evaluation.awardedPoints, submissionStatus });
+      const awardedPoints = semanticAudit.learningScore.displayedPoints;
       const payload = { correction: evaluation.correction || "", missingOutline: evaluation.missingOutline || "",
         wrongLaw: evaluation.wrongLaw || "", applicationFix: evaluation.applicationFix || "",
         modelDifference: evaluation.modelDifference || "", nextReview: evaluation.nextReview,
-        semanticAudit, aiScore: { awardedPoints: evaluation.awardedPoints,
-          officialMaximum: Number(item.max_points), scores: evaluation.scores,
-          rationale: semanticAudit.scoreRationale } };
+        semanticAudit, aiScore: { awardedPoints, officialMaximum: Number(item.max_points),
+          label: semanticAudit.learningScore.label, rawPoints: semanticAudit.learningScore.rawPoints,
+          rawFraction: semanticAudit.learningScore.rawFraction,
+          rationale: semanticAudit.learningScore.calculationRationale },
+        sevenElementDiagnostics: evaluation.scores };
       await client.query(
         `INSERT INTO p2_grades(submission_id,subject_id,stable_key,awarded_points,max_points,
           issue_score,outline_score,law_score,precedent_score,application_score,conclusion_score,expression_score,
           error_type,check_type,next_review_type,evaluation_payload,evaluation_digest,key_version,encryption_key_id)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-        [row.submission_id, SUBJECT, evaluation.key, evaluation.awardedPoints, evaluation.maxPoints,
+        [row.submission_id, SUBJECT, evaluation.key, awardedPoints, evaluation.maxPoints,
           evaluation.scores.issue, evaluation.scores.outline, evaluation.scores.law, evaluation.scores.precedent,
           evaluation.scores.application, evaluation.scores.conclusion, evaluation.scores.expression,
           evaluation.errorType, evaluation.checkType, evaluation.nextReview, JSON.stringify(payload), digest(payload),
@@ -332,17 +357,37 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
       await client.query(
         `INSERT INTO learning_events(owner_id,subject_id,stable_key,event_type,payload)
          VALUES($1,$2,$3,'P2_GRADED',$4)`, [ownerId, SUBJECT, evaluation.key,
-          JSON.stringify({ awardedPoints: evaluation.awardedPoints, maxPoints: evaluation.maxPoints, scores: evaluation.scores })]);
+          JSON.stringify({ awardedPoints, maxPoints: evaluation.maxPoints,
+            learningScore: semanticAudit.learningScore, sevenElementDiagnostics: evaluation.scores })]);
       summaries.push({ key: evaluation.key, coreElementMatch: semanticAudit.coreElementMatch,
-        awardedPoints: evaluation.awardedPoints, maxPoints: evaluation.maxPoints,
+        submissionStatus, awardedPoints, maxPoints: evaluation.maxPoints,
+        learningScore: semanticAudit.learningScore,
         matchedLaw: semanticAudit.matchedLaw, missingLaw: semanticAudit.missingLaw,
         misappliedLaw: semanticAudit.misappliedLaw, improvement: semanticAudit.improvement,
         scoreRationale: semanticAudit.scoreRationale });
     }
+    await scheduleExamReviewDue(client, ownerId,
+      summaries.filter((item) => item.submissionStatus === "SUBMITTED").map((item) => item.key),
+      row.submission_id);
     await finalizeSubmission(client, ownerId, input.setId, row.submission_id, gradeDigest, "P2_GRADED",
       evaluations.map(({ semanticAnalysis, ...evaluation }) => evaluation));
     return { ok: true, replayed: false, setId: input.setId, submissionId: row.submission_id, summaries };
   });
+}
+
+export async function scheduleExamReviewDue(client, ownerId, stableKeys, submissionId) {
+  if (stableKeys.length === 0) return;
+  await client.query(
+    `INSERT INTO exam_review_due(owner_id,subject_id,stable_key,due_at,review_step,last_submission_id)
+     SELECT $1,$2,key,now() + interval '7 days',0,$4::uuid
+       FROM unnest($3::text[]) AS key
+     ON CONFLICT(owner_id,subject_id,stable_key) DO UPDATE SET
+       review_step=least(exam_review_due.review_step + 1,2),
+       due_at=now() + CASE least(exam_review_due.review_step + 1,2)
+         WHEN 1 THEN interval '21 days' ELSE interval '60 days' END,
+       last_submission_id=EXCLUDED.last_submission_id,updated_at=now()
+     WHERE exam_review_due.last_submission_id IS DISTINCT FROM EXCLUDED.last_submission_id`,
+    [ownerId, SUBJECT, stableKeys, submissionId]);
 }
 
 async function finalizeSubmission(client, ownerId, setId, submissionId, gradeDigest, eventType, payload) {
@@ -363,6 +408,7 @@ export function createPostgresExecutor(options = {}) {
   return async (name, payload, context = {}) => {
     const ownerId = required(context.ownerId, "authenticated owner");
     const keyId = () => required(env.GRADING_ENCRYPTION_KEY_ID, "GRADING_ENCRYPTION_KEY_ID");
+    if (name === "getCivilExamProgress") return getExamProgress(pool, { ...payload, ownerId, subjectId: SUBJECT });
     if (name === "issueCivilP1") return issue(pool, ownerId, "P1", payload, keyId());
     if (name === "issueCivilP2") return issue(pool, ownerId, "P2", payload, keyId());
     if (name === "gradeCivilP1") return gradeP1(pool, ownerId, payload, gradingKey(env), keyId());

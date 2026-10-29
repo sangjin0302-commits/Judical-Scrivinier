@@ -33,6 +33,44 @@ test("live Docs snapshot keeps stable key and prompt without answer or grading m
   assert.equal(snapshot.problems[0].gradingFieldsKnown, false);
 });
 
+test("new P2 case snapshot preserves group keys and has no inferred grading key", () => {
+  const caseDoc = { documentId: "doc-p2", revisionId: "revision-new", title: "민법 2차",
+    body: { content: [
+      paragraph("2026년도 (제32회)", 1), paragraph("문 3", 30), paragraph("문제", 40),
+      paragraph("甲의 행위를 검토하시오.", 50), paragraph("현실답안 및 해설", 100),
+      paragraph("현실답안 3 가 (10점)", 120), paragraph("모범답안: 비공개", 150),
+      paragraph("현실답안 3 나 (15점)", 190),
+    ] } };
+  const snapshot = snapshotFromGoogleDoc(caseDoc, "SRC-CIV-005");
+  assert.deepEqual(snapshot.problems.map((item) => item.stableKey), [
+    "SRC-CIV-005|2026-제32회-문3-소문항1",
+    "SRC-CIV-005|2026-제32회-문3-소문항2",
+  ]);
+  assert.deepEqual(snapshot.problems.map((item) => item.maxPoints), [10, 15]);
+  assert.ok(snapshot.problems.every((item) => item.gradingKeyVersion === null));
+  assert.ok(snapshot.problems.every((item) => !item.promptText.includes("모범답안:")));
+  assert.deepEqual(dryRunGoogleDocsCandidates(snapshot, []).counts,
+    { NEW: 2, MODIFIED: 0, UNCHANGED: 0, DUPLICATE: 0, DELETE_CANDIDATE: 0 });
+});
+
+test("inserting a new P1 before an old problem keeps old key and separates candidates", () => {
+  const before = snapshotFromGoogleDoc(document(), "SRC-CIV-004");
+  const edited = document();
+  edited.revisionId = "r2";
+  edited.tabs[0].documentTab.body.content.unshift(
+    paragraph("[민법26001] 새 논점 | X", 1),
+    paragraph("지문: 새 공식 지문.", 20),
+  );
+  const after = snapshotFromGoogleDoc(edited, "SRC-CIV-004");
+  const prior = [{ ...before.problems[0], currentVersionId: "v-old" }];
+  const candidates = classifyDocumentSnapshot(after.problems, prior, after.documentId);
+  assert.equal(candidates.find((item) => item.stableKey === "SRC-CIV-004|민법26001")?.kind, "NEW");
+  assert.equal(candidates.find((item) => item.stableKey === "SRC-CIV-004|민법25032")?.kind, "UNCHANGED");
+  assert.equal(after.problems[1].sourceVersion === before.problems[0].sourceVersion, false);
+  assert.deepEqual(dryRunGoogleDocsCandidates(after, prior).counts,
+    { NEW: 1, MODIFIED: 0, UNCHANGED: 1, DUPLICATE: 0, DELETE_CANDIDATE: 0 });
+});
+
 test("question-only Docs change preserves existing grading and unit metadata", () => {
   const snapshot = snapshotFromGoogleDoc(document(), "SRC-CIV-004");
   const prior = { ...snapshot.problems[0], promptDigest: snapshot.problems[0].promptDigest,

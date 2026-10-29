@@ -6,6 +6,8 @@ test("migration runner allowlists files, locks execution, and records digest ato
   const source = await readFile(new URL("../db/apply-migration.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /0003_concept_learning\.sql/);
   assert.match(source, /0004_google_docs_sync\.sql/);
+  assert.match(source, /0008_exam_selection_indexes\.sql/);
+  assert.match(source, /0009_exam_review_due\.sql/);
   assert.match(source, /pg_advisory_lock/);
   assert.match(source, /schema_migrations/);
   assert.match(source, /migration_digest/);

@@ -1,18 +1,16 @@
-# Codex guidance — official exam-only integration
+# Official civil exam integration
 
 ## Scope
-- This branch supports official civil-law P1/P2 question selection, submission, grading, history and guarded Google Docs synchronization. Do NOT implement concept tutoring, lesson generation, recall questions or progress tracking.
-- Read PROJECT_INSTRUCTIONS.md; refer as needed to docs/exam-only-integration.md, EXAM_SELECTION_PARITY_AUDIT.md and docs/p2-official-accuracy-gate.md.
-- Keep existing production Google Sheets/Docs/Apps Script read-only; work with isolated test PostgreSQL. No new infrastructure, credentials or paid services. No secrets, personal answers, official keys or copyrighted full problem text in GitHub/logs.
+- Support official P1/P2 issue, submission, grading, immutable history and exam progress; WorkOS, PostgreSQL and guarded Google Docs sync. Do not develop concept lessons, recall, concept progress or study modes. Preserve existing concept tables and records.
+- Read `PROJECT_INSTRUCTIONS.md` and `docs/exam-only-integration.md`. Current user decisions override older audits. Sheets controls must remain available to users through PostgreSQL: range/type/count/cases, year/session/question/stable key, unattempted/incorrect/low score/due/source change, active-set exclusion and problem progress. Do not clone old Sheet seed or cell formulas.
+- Keep operating Google Sheets, Docs and Apps Script read-only; do not change Docs authoring format. Do not create new infrastructure, credentials or paid services.
 
-## Codex subagents
-- On substantial unfinished work, delegate 3 independent streams to project agents: exam_selection (P1/P2 parity), p2_grading (meaningful grading validity) and docs_sync (safe incrementals). Wait for results and integrate them in the main thread.
-- Agents must have disjoint edits. The parent coordinator exclusively changes shared db/postgres-adapter.mjs, server.mjs and app/mcp/route.js and performs integration/migration execution. Never run concurrent writes to the same Railway DB or Git branch.
-- Agents report concise evidence and unverified issues; coordinator verifies, runs CI-equivalent tests, reviews security, and commits/pushes non-secret code (including labeled WIP) with confirmed remote SHA. Avoid rereading already verified work; cap active subagents at 3.
+## Parallel work
+- For substantial independent work, delegate exam selection, P2 grading and Docs sync to agents. Keep edits disjoint; coordinate shared adapter/server/route changes through the parent. Do not run concurrent writes to the same Railway DB or Git branch.
+- Parent checks agent results, runs integrated tests and security scans, and commits/pushes safe code including labeled WIP. Confirm remote SHA. Avoid repeating already verified work.
 
-## Release and safety gates
-- Actual P1 candidate selection must match Sheets quotas, modes, scope and seeded priority order. Actual P2 must select groups and all subquestions. Missing metadata must fail closed, not fall back to random.
-- P2 must lock the actual answer before fetching any private rubric; do not fabricate official awarded points or credit abstention, and preserve seven dimensions, semantic match evidence, original answers and idempotence.
-- Docs: 11 unresolved differences remain quarantined. Test explicitly approved synthetic NEW/MODIFIED changes in an isolated DB, including version preservation, authorization, idempotence and rollback. Never auto-approve content.
-- Prior to merge, run full tests, secret scans, authenticated ChatGPT P1/P2 E2E and DB/history parity checks. Automated checks alone are insufficient.
-- PR #5 is the sole main integration candidate. PR #1/#2/#3/#4 are not to be wholesale merged. Merging main and switching the operating database are distinct; operating data cutover always requires separate user approval. Only merge PR #5 after all applicable gates pass and the current request explicitly authorizes it.
+## Release and safety
+- Preserve stable problem keys, versions, original answers, encrypted grading keys and past scores. No secrets, private keys, personal answers, DB dumps or full copyrighted problem text in GitHub/logs.
+- P2: persist submitted originals before rubric access. Official model-answer elements score 1/0.5/0 for match/partial/missing or error; seven diagnostics stay separate. Omitted subquestions are not answered attempts. Never label AI learning points as official examiner marks.
+- Docs: 11 unresolved content differences stay quarantined. Only approved synthetic NEW/MODIFIED changes may be applied in isolated tests; check version preservation, idempotence and rollback. New items without verified private grading keys stay unpublished.
+- Before PR #5 merge, verify every required user function, isolated DB and authenticated ChatGPT P1/P2 calls, security and history parity. PR #1/#2/#3/#4 stay separate; no wholesale merge. Main merge and operating DB cutover are separate; cutover requires separate user approval.
