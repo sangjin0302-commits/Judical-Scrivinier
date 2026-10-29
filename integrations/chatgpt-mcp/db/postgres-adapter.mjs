@@ -367,7 +367,12 @@ export function createPostgresExecutor(options = {}) {
     if (name === "issueCivilP2") return issue(pool, ownerId, "P2", payload, keyId());
     if (name === "gradeCivilP1") return gradeP1(pool, ownerId, payload, gradingKey(env), keyId());
     if (name === "prepareCivilP2Grade") return prepareP2(pool, ownerId, payload, gradingKey(env), keyId());
-    if (name === "commitCivilP2Grade") return commitP2(pool, ownerId, payload, gradingKey(env), keyId());
+    if (name === "commitCivilP2Grade") {
+      if (env.P2_GRADE_COMMIT_ENABLED !== "true") {
+        throw new Error("P2 grade commit awaits official accuracy acceptance");
+      }
+      return commitP2(pool, ownerId, payload, gradingKey(env), keyId());
+    }
     throw new Error(`unsupported PostgreSQL tool: ${name}`);
   };
 }

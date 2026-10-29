@@ -3,7 +3,7 @@ import pg from "pg";
 import { fetchGoogleDocsSnapshotReadOnly, dryRunGoogleDocsCandidates } from "./google-docs-snapshot.mjs";
 import { postgresConnectionOptions } from "./pg-connection.mjs";
 
-const SOURCES = [
+export const SOURCES = [
   ["SRC-CIV-004", "169rzZ3qlM-LfZI7I6gCSwWEeJ4Cc8RiHZzH9Qm_dwys"],
   ["SRC-CIV-004B", "1hEQNsDti70lCSYG5PL90s7klhpqQJ-V4kERpSocuLLc"],
   ["SRC-CIV-005", "1xP0jLOUUQWzUGrv0whx7_z1cyVWAghxlGJVQo3Do_xA"],
@@ -14,7 +14,7 @@ function required(value, name) {
   return value;
 }
 
-async function googleAccessToken(env, fetchImpl) {
+export async function googleAccessToken(env, fetchImpl) {
   const response = await fetchImpl("https://oauth2.googleapis.com/token", {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

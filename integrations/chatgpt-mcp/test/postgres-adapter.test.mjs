@@ -9,6 +9,15 @@ test("grading key is never generated when the configured key is missing", () => 
   assert.throws(() => gradingKey({ GRADING_KEY_BASE64: Buffer.alloc(31).toString("base64") }), /32 bytes/);
 });
 
+test("unverified P2 grade commit is closed without an explicit accuracy gate", async () => {
+  let connected = false;
+  const execute = createPostgresExecutor({ pool: { async connect() { connected = true; } },
+    env: { GRADING_ENCRYPTION_KEY_ID: "key-v1" } });
+  await assert.rejects(() => execute("commitCivilP2Grade", { setId: "set-1" },
+    { ownerId: "user-1" }), /awaits official accuracy acceptance/);
+  assert.equal(connected, false);
+});
+
 test("new issue sets snapshot exact grading key version and encryption key id", async () => {
   const itemInserts = [];
   const advisoryLocks = [];
@@ -99,7 +108,8 @@ test("P2 commit validates official and original evidence before any grade write"
     release() {},
   };
   const executor = createPostgresExecutor({ pool: { connect: async () => client },
-    env: { GRADING_KEY_BASE64: key.toString("base64"), GRADING_ENCRYPTION_KEY_ID: "key-v1" } });
+    env: { GRADING_KEY_BASE64: key.toString("base64"), GRADING_ENCRYPTION_KEY_ID: "key-v1",
+      P2_GRADE_COMMIT_ENABLED: "true" } });
   const evaluation = { key: "p2-1", maxPoints: 10, awardedPoints: 5,
     scores: { issue: 1, outline: 1, law: 1, precedent: 0, application: 1, conclusion: 1, expression: 1 },
     errorType: "none", checkType: "review", nextReview: "3 days",
