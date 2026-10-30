@@ -431,6 +431,15 @@ export function createPostgresExecutor(options = {}) {
       if (env.P2_GRADE_COMMIT_ENABLED !== "true") {
         throw new Error("P2 grade commit awaits official accuracy acceptance");
       }
+      // Optional acceptance-run restriction. An explicitly empty list denies all;
+      // omitting it preserves existing isolated-test compatibility.
+      if (env.P2_GRADE_COMMIT_ALLOWED_SET_IDS != null) {
+        const allowedSets = new Set(String(env.P2_GRADE_COMMIT_ALLOWED_SET_IDS)
+          .split(",").map(value => value.trim()).filter(Boolean));
+        if (!allowedSets.has(payload?.setId)) {
+          throw new Error("P2 grade commit set is not allowed for acceptance");
+        }
+      }
       return commitP2(pool, ownerId, payload, gradingKey(env), keyId());
     }
     throw new Error(`unsupported PostgreSQL tool: ${name}`);

@@ -19,3 +19,5 @@ Runtime acceptance remains **unexecuted**: the official Vercel CLI listed the Pr
 `npm ci`, `npm test`, `npm run build`로 코드 경계를 확인한다. 임시 PostgreSQL 18에서 합성 P1/P2 출제·채점·원답·기록·멱등·소유권·Docs 적용/롤백은 확인했다. 실제 Railway와 ChatGPT 호출은 별도 인수시험이다. 2차 점수는 필수 의미요소 비율 × 최대 배점의 AI 학습평가이며 7요소 진단과 분리한다. 의미 판정 정확성 확인 전 P2 기록 게이트는 닫혀 있다. 기존 PREPARED 원답을 임의로 채점 완료 처리하지 않는다.
 
 기존 개념 DB 테이블과 기록은 삭제하거나 수정하지 않는다. 새 브랜치에서 개념 서비스 코드와 사용자 도구만 제외한다. 운영 Sheets·Docs·Apps Script 쓰기와 운영 DB 전환은 별도 승인 전 금지한다.
+
+개별 세트 인수시험에는 `P2_GRADE_COMMIT_ALLOWED_SET_IDS`를 쉼표로 구분한 정확한 세트 ID 목록으로 설정할 수 있다. `P2_GRADE_COMMIT_ENABLED=true`와 목록 포함 조건을 모두 만족해야 하며 기존 WorkOS 소유권 검사도 그대로 적용된다. 목록을 설정했지만 비어 있으면 모든 세트를 차단한다. 목록 환경변수를 아예 생략하면 기존 격리 시험 호환 동작을 유지하므로, 범위를 제한한 인수 실행에는 반드시 목록을 명시한다. 기본 채점 게이트는 계속 닫혀 있으며 이 코드 변경으로 배포 환경변수를 활성화하지 않는다. 세트 ID나 비밀값은 저장소에 기록하지 않는다.

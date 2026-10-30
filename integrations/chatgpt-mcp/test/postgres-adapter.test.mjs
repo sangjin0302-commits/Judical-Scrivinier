@@ -33,6 +33,41 @@ test("unverified P2 grade commit is closed without an explicit accuracy gate", a
   assert.equal(connected, false);
 });
 
+test("P2 acceptance set restriction composes with gate and rejects unlisted or empty lists before DB access", async () => {
+  let connects = 0;
+  const pool = { async connect() { connects++; throw new Error("unexpected DB access"); } };
+  for (const allowed of ["set-allowed", "", " , "]) {
+    const execute = createPostgresExecutor({ pool, env: {
+      P2_GRADE_COMMIT_ENABLED: "true", P2_GRADE_COMMIT_ALLOWED_SET_IDS: allowed } });
+    await assert.rejects(execute("commitCivilP2Grade", { setId: "set-other", evaluations: [] },
+      { ownerId: "user-1" }), /set is not allowed/);
+  }
+  const closed = createPostgresExecutor({ pool, env: {
+    P2_GRADE_COMMIT_ENABLED: "false", P2_GRADE_COMMIT_ALLOWED_SET_IDS: "set-allowed" } });
+  await assert.rejects(closed("commitCivilP2Grade", { setId: "set-allowed", evaluations: [] },
+    { ownerId: "user-1" }), /awaits official accuracy acceptance/);
+  assert.equal(connects, 0);
+});
+
+test("P2 allowed set does not bypass authenticated owner or set ownership", async () => {
+  const statements = [];
+  const client = { release() {}, async query(sql) {
+    statements.push(sql);
+    if (sql.includes("FROM issue_sets")) return { rowCount: 1, rows: [
+      { owner_id: "real-owner", subject_id: "CIVIL", stage: "P2" }] };
+    return { rows: [], rowCount: 0 };
+  } };
+  const execute = createPostgresExecutor({ pool: { connect: async () => client }, env: {
+    P2_GRADE_COMMIT_ENABLED: "true", P2_GRADE_COMMIT_ALLOWED_SET_IDS: " set-allowed , second-set ",
+    GRADING_KEY_BASE64: Buffer.alloc(32).toString("base64"), GRADING_ENCRYPTION_KEY_ID: "test-key" } });
+  const input = { setId: "set-allowed", evaluations: [] };
+  await assert.rejects(execute("commitCivilP2Grade", input, {}), /authenticated owner/);
+  assert.equal(statements.length, 0);
+  await assert.rejects(execute("commitCivilP2Grade", input, { ownerId: "different-owner" }), /ownership denied/);
+  assert.equal(statements.at(-1), "ROLLBACK");
+  assert.ok(!statements.some(sql => /^\s*(INSERT|UPDATE|DELETE)\b/.test(sql)));
+});
+
 test("new issue sets snapshot exact grading key version and encryption key id", async () => {
   const itemInserts = [];
   const advisoryLocks = [];
@@ -127,7 +162,7 @@ test("P2 commit validates official and original evidence before any grade write"
   };
   const executor = createPostgresExecutor({ pool: { connect: async () => client },
     env: { GRADING_KEY_BASE64: key.toString("base64"), GRADING_ENCRYPTION_KEY_ID: "key-v1",
-      P2_GRADE_COMMIT_ENABLED: "true" } });
+      P2_GRADE_COMMIT_ENABLED: "true", P2_GRADE_COMMIT_ALLOWED_SET_IDS: " set-1 " } });
   const evaluation = { key: "p2-1", maxPoints: 10, awardedPoints: 10,
     scores: { issue: 1, outline: 1, law: 1, precedent: 0, application: 1, conclusion: 1, expression: 1 },
     errorType: "none", checkType: "review", nextReview: "3 days",
