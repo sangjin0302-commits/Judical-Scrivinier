@@ -93,3 +93,21 @@ test("invalid registry folder ID gets a safe specific code without HTTP", async 
   });
   assert.deepEqual(result.sourceHealth.folders,[{stage:"P1",ok:false,code:"FOLDER_ID_INVALID"}]);
 });
+
+test("disabled Drive project number comes only from validated provider metadata", async () => {
+  for (const [metadata, expected] of [
+    [{service:"drive.googleapis.com",consumer:"projects/123456789012"},"123456789012"],
+    [{service:"other.googleapis.com",consumer:"projects/123456789012"},undefined],
+    [{service:"drive.googleapis.com",consumer:"projects/private-project-name"},undefined],
+    [{service:"drive.googleapis.com",consumer:"https://private.example/projects/123"},undefined],
+  ]) {
+    const result = await withDriveSourceHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+      pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
+      fetchImpl:async()=>Response.json({error:{message:"private-message",details:[
+        {reason:"SERVICE_DISABLED",metadata:{...metadata,activationUrl:"https://private.example"}},
+      ]}},{status:403}),
+    });
+    assert.equal(result.sourceHealth.folders[0].projectNumber,expected);
+    assert.doesNotMatch(JSON.stringify(result),/private|activationUrl|consumer|service/);
+  }
+});

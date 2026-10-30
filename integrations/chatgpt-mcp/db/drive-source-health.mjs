@@ -53,6 +53,12 @@ export async function withDriveSourceHealth(progress, { pool, ownerId, env = pro
               ...(Array.isArray(error?.details) ? error.details.map((item) => item?.reason) : [])];
             const reasons = [...new Set(candidates.filter((reason) => SAFE_DRIVE_REASONS.has(reason)))];
             if (reasons.length) failureMetadata.reasons = reasons;
+            const projectNumbers = [...new Set((Array.isArray(error?.details) ? error.details : [])
+              .filter((detail) => detail?.reason === "SERVICE_DISABLED" &&
+                detail?.metadata?.service === "drive.googleapis.com")
+              .map((detail) => /^projects\/([1-9][0-9]{0,19})$/.exec(detail.metadata.consumer || "")?.[1])
+              .filter(Boolean))];
+            if (projectNumbers.length === 1) failureMetadata.projectNumber = projectNumbers[0];
           } catch { /* Provider bodies and messages are never returned. */ }
         }
         return response;
