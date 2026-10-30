@@ -6,6 +6,7 @@ import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "./p2-semantic-ev
 import { selectExamCandidates } from "./fast-exam-selection.mjs";
 import { normalizeP2Submission } from "./p2-submission-contract.mjs";
 import { validateP2FixedCriteria } from "./p2-fixed-criteria.mjs";
+import { withDriveSourceHealth } from "./drive-source-health.mjs";
 
 const SUBJECT = "CIVIL";
 const P2_SCORE_FIELDS = ["issue", "outline", "law", "precedent", "application", "conclusion", "expression"];
@@ -422,7 +423,10 @@ export function createPostgresExecutor(options = {}) {
   return async (name, payload, context = {}) => {
     const ownerId = required(context.ownerId, "authenticated owner");
     const keyId = () => required(env.GRADING_ENCRYPTION_KEY_ID, "GRADING_ENCRYPTION_KEY_ID");
-    if (name === "getCivilExamProgress") return getExamProgress(pool, { ...payload, ownerId, subjectId: SUBJECT });
+    if (name === "getCivilExamProgress") {
+      const progress = await getExamProgress(pool, { ...payload, ownerId, subjectId: SUBJECT });
+      return withDriveSourceHealth(progress, { pool, ownerId, env });
+    }
     if (name === "issueCivilP1") return issue(pool, ownerId, "P1", payload, keyId());
     if (name === "issueCivilP2") return issue(pool, ownerId, "P2", payload, keyId());
     if (name === "gradeCivilP1") return gradeP1(pool, ownerId, payload, gradingKey(env), keyId());
