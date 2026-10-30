@@ -187,3 +187,11 @@ test("refresh scope is summarized as four booleans without raw token or scope te
     assert.doesNotMatch(JSON.stringify(result),/private-token|private-scope|googleapis/);
   }
 });
+
+test("OAuth client comparison exposes a hash only to already gated diagnostics", async () => {
+  const result=await withDriveSourceHealth(progress,{env:{...env,GOOGLE_CLIENT_ID:"private-client-id",GOOGLE_CLIENT_SECRET:"private-secret"},ownerId:"admin",
+    tokenProvider:async()=>"private-token",pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},listFiles:async()=>[],
+  });
+  assert.match(result.sourceHealth.oauthClientIdSha256,/^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(result),/private-client-id|private-secret|private-token/);
+});

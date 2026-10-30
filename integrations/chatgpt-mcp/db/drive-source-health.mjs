@@ -127,7 +127,9 @@ export async function withDriveSourceHealth(progress, { pool, ownerId, env = pro
     }
     // Account diagnostics run independently after folder checks. Failure must not
     // erase the already collected folder access result or expose the email.
-    folderResult = { ok: counts.every((item) => item.ok), readOnly: true, folders: counts, scopeSummary };
+    folderResult = { ok: counts.every((item) => item.ok), readOnly: true, folders: counts, scopeSummary,
+      ...(typeof env.GOOGLE_CLIENT_ID === "string" && env.GOOGLE_CLIENT_ID.trim()
+        ? { oauthClientIdSha256: createHash("sha256").update(env.GOOGLE_CLIENT_ID.trim()).digest("hex") } : {}) };
     const identity = await accountReader(token, timedFetch);
     return { ...folderResult, ...identity };
   };
