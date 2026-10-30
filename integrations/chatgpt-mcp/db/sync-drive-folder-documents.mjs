@@ -6,7 +6,14 @@ import { listFolderDocuments, missingManagedDocuments, registerDiscoveredDocumen
 import { fetchGoogleDocReadOnly, detectGoogleDocsChanges, applyApprovedSyncCandidate,
   sha256 } from "./google-docs-sync.mjs";
 import { snapshotFromGoogleDoc } from "./google-docs-snapshot.mjs";
+import { documentParagraphs } from "./google-docs-parser.mjs";
 import { postgresConnectionOptions } from "./pg-connection.mjs";
+
+function warningLimit(value, fallback) {
+  const number = value == null || value === "" ? fallback : Number(value);
+  if (!Number.isSafeInteger(number) || number < 1000) throw new Error("invalid document warning limit");
+  return number;
+}
 
 async function withClient(pool, action) {
   const client = await pool.connect();
@@ -27,6 +34,8 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
   markMissing = markMissingDocumentForReview, recordFailure = recordDocumentFailure } = {}) {
   const connectionString = env.DATABASE_PUBLIC_URL || env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required");
+  const warningChars = warningLimit(env.GOOGLE_DOC_WARNING_CHARS, 500000);
+  const warningBytes = warningLimit(env.GOOGLE_DOC_WARNING_BYTES, 10000000);
   const accessToken = await tokenProvider(env, fetchImpl);
   const pool = new Pool(postgresConnectionOptions(connectionString, { max: 2 }));
   try {
@@ -70,6 +79,9 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
           continue;
         }
         const document = await fetchDocument({ documentId: file.documentId, accessToken, fetchImpl });
+        const characterCount = documentParagraphs(document).reduce((sum, item) => sum + item.text.length, 0);
+        const capacityWarning = characterCount >= warningChars ||
+          (Number.isFinite(file.sizeBytes) && file.sizeBytes >= warningBytes);
         const snapshot = snapshotParser(document, registration.sourceId, file.stage);
         if (!snapshot.problems.length) throw new Error("NO_PROBLEMS");
         const requestId = "drive-detect:" + sha256({ documentId: file.documentId,
@@ -86,9 +98,10 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
         }
         await withClient(pool, (client) => record(client, file.documentId, {
           revisionId: snapshot.revisionId, driveVersion: file.driveVersion,
-          counts, problemCount: snapshot.problems.length, status: "STAGED" }));
+          counts: { ...counts, capacityWarning }, problemCount: snapshot.problems.length, status: "STAGED" }));
         results.push({ documentId: file.documentId, sourceId: registration.sourceId,
-          status: "STAGED", counts, stagedNew });
+          status: "STAGED", counts, stagedNew, capacityWarning,
+          ...(capacityWarning ? { guidance: "Start the next Google Doc in the same folder; do not split this source automatically." } : {}) });
       } catch (error) {
         if (registration) await withClient(pool, (client) =>
           recordFailure(client, file.documentId,

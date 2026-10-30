@@ -73,6 +73,24 @@ test("unchanged Drive version skips Docs fetch and parser", async () => {
   assert.equal(result.documents[0].status, "UNCHANGED");
 });
 
+test("large Docs produces next-file warning without changing publication", async () => {
+  let recorded;
+  const result = await syncDriveFolderDocuments({
+    env: { ...env, GOOGLE_DOC_WARNING_BYTES: "1000" }, Pool: FakePool,
+    tokenProvider: async () => "token",
+    listFiles: async (folderId) => folderId === "folder-1"
+      ? [{ ...doc("large-doc"), sizeBytes: 1001 }] : [],
+    register: async () => ({ sourceId: "SRC-CIV-AUTO-abc", status: "DISCOVERED" }),
+    fetchDocument: async () => ({ documentId: "large-doc" }), snapshotParser,
+    detect: async () => ({ counts: { NEW: 0 }, candidates: [] }),
+    record: async (_client, _id, details) => { recorded = details; },
+  });
+  assert.equal(result.documents[0].capacityWarning, true);
+  assert.match(result.documents[0].guidance, /next Google Doc/);
+  assert.equal(recorded.counts.capacityWarning, true);
+  assert.equal(result.appliedToPublishedBank, false);
+});
+
 test("failed folder scan suppresses missing-document review", async () => {
   const result = await syncDriveFolderDocuments({ env, Pool: FakePool,
     tokenProvider: async () => "token",
