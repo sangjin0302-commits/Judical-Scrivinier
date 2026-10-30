@@ -23,6 +23,47 @@ const doc = (documentId, driveVersion = "v1") => ({ documentId, title: "test",
 const snapshotParser = (_document, sourceId) => ({ documentId: "new-doc", sourceId,
   revisionId: "r1", contentDigest: "digest", problems: [{ stableKey: `${sourceId}|Q1` }] });
 
+test("dry run lists folders with server token provider and never fetches content or writes", async () => {
+  const queries = [];
+  let closed = false;
+  class ReadOnlyPool extends FakePool {
+    async query(sql) {
+      queries.push(sql);
+      assert.match(sql, /^SELECT /);
+      assert.match(sql, /FROM document_folders/);
+      return super.query(sql);
+    }
+    async connect() { assert.fail("dry run must not acquire a write client"); }
+    async end() { closed = true; }
+  }
+  const forbidden = async () => assert.fail("dry run called a content or mutation operation");
+  const result = await syncDriveFolderDocuments({ env, dryRun: true, Pool: ReadOnlyPool,
+    tokenProvider: async () => "server-token",
+    listFiles: async (_id, token) => { assert.equal(token, "server-token"); return [doc("private-id")]; },
+    fetchDocument: forbidden, register: forbidden, detect: forbidden, apply: forbidden,
+    record: forbidden, markMissing: forbidden, recordFailure: forbidden,
+  });
+  assert.equal(result.readOnly, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.documentCount, 1);
+  assert.equal(result.folders.length, 2);
+  assert.equal(queries.length, 1);
+  assert.equal(closed, true);
+  assert.doesNotMatch(JSON.stringify(result), /private-id|server-token/);
+});
+
+test("dry run reports folder permission failures without staging", async () => {
+  const result = await syncDriveFolderDocuments({ env, dryRun: true, Pool: FakePool,
+    tokenProvider: async () => "token",
+    listFiles: async () => { throw new Error("private provider error"); },
+    register: async () => assert.fail("must not register"),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.readOnly, true);
+  assert.equal(result.folderErrors.length, 2);
+  assert.doesNotMatch(JSON.stringify(result), /private provider error/);
+});
+
 test("per-document parser failure does not stop another document", async () => {
   const failed = [];
   const recorded = [];

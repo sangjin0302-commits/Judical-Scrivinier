@@ -54,12 +54,14 @@ export async function findCrossDocumentDuplicates(pool, snapshot) {
 }
 
 export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = fetch,
+  dryRun = false,
   Pool = pg.Pool, tokenProvider = googleAccessToken, listFiles = listFolderDocuments,
   fetchDocument = fetchGoogleDocReadOnly, snapshotParser = snapshotFromGoogleDoc,
   detect = detectGoogleDocsChanges, apply = applyApprovedSyncCandidate,
   findDuplicates = findCrossDocumentDuplicates,
   register = registerDiscoveredDocument, record = recordDocumentSync,
   markMissing = markMissingDocumentForReview, recordFailure = recordDocumentFailure } = {}) {
+  if (typeof dryRun !== "boolean") throw new Error("invalid dryRun option");
   const connectionString = env.DATABASE_PUBLIC_URL || env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required");
   const warningChars = warningLimit(env.GOOGLE_DOC_WARNING_CHARS, 500000);
@@ -72,16 +74,23 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
          FROM document_folders WHERE enabled=true AND subject_id='CIVIL'
          ORDER BY folder_id`)).rows;
     const discovered = [];
+    const folderSummaries = [];
     const folderErrors = [];
     for (const folder of folders) {
       try {
         const files = await listFiles(folder.folderId, accessToken, fetchImpl);
+        folderSummaries.push({ stage: folder.stage, documentCount: files.length });
         discovered.push(...files.map((file) => ({ ...file, subjectId: folder.subjectId,
           stage: folder.stage })));
       } catch (error) {
         folderErrors.push({ folderId: folder.folderId, code: "FOLDER_LIST_FAILED" });
       }
     }
+    // Validate the deployed Google credential's actual folder access without
+    // fetching private document text or registering/staging any source.
+    if (dryRun) return { ok: folderErrors.length === 0, readOnly: true,
+      appliedToPublishedBank: false, folderErrors, folders: folderSummaries,
+      documentCount: new Set(discovered.map((file) => file.documentId)).size };
     const documentOccurrences = new Map();
     for (const file of discovered) documentOccurrences.set(file.documentId,
       (documentOccurrences.get(file.documentId) || 0) + 1);
