@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withDriveSourceHealth as actualHealth } from "../db/drive-source-health.mjs";
+import { withDriveSourceHealth as actualHealth, readDriveAccountFingerprint } from "../db/drive-source-health.mjs";
 const withDriveSourceHealth = (progress, options) => actualHealth(progress, {
-  checkFolder: async () => ({ mimeType: "application/vnd.google-apps.folder", trashed: false }), ...options,
+  checkFolder: async () => ({ mimeType: "application/vnd.google-apps.folder", trashed: false }), accountReader: async () => ({}), ...options,
 });
 
 const env = { DRIVE_DIAGNOSTIC_ENABLED: "true", DRIVE_DIAGNOSTIC_ADMIN_USER_IDS: "admin",
@@ -27,7 +27,7 @@ test("explicit Preview admin gets counts only with one read query and no content
       return {rows:[{folderId:"private-folder",stage:"P1"}]}; }},
     listFiles: async (_folder, token) => {assert.equal(token,"private-token"); return [{documentId:"private-doc"}];},
   });
-  assert.deepEqual(sourceHealth, {...progress,sourceHealth:{ok:true,readOnly:true,folders:[{stage:"P1",documentCount:1,ok:true,folderVerified:true}]}});
+  assert.deepEqual(sourceHealth, {...progress,sourceHealth:{ok:true,readOnly:true,folders:[{stage:"P1",documentCount:1,ok:true,folderVerified:true}],scopeSummary:{reported:false}}});
   assert.doesNotMatch(JSON.stringify(sourceHealth),/private/);
   assert.deepEqual(progress,{ok:true,attempted:4});
 });
@@ -117,7 +117,7 @@ test("disabled Drive project number comes only from validated provider metadata"
 
 test("empty listing is accepted only after folder metadata verifies type and nontrashed state", async () => {
   const calls=[];
-  const result=await actualHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+  const result=await actualHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",accountReader:async()=>({}),
     pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
     fetchImpl:async(url)=>{calls.push(url);return url.includes("/files/folder-")
       ? Response.json({mimeType:"application/vnd.google-apps.folder",trashed:false}) : Response.json({files:[]});},
@@ -138,5 +138,52 @@ test("inaccessible and nonfolder sources cannot masquerade as empty folders", as
     assert.equal(result.sourceHealth.ok,false);
     assert.equal(result.sourceHealth.folders[0].code,metadata ? "FOLDER_INVALID_OR_TRASHED":"FOLDER_ACCESS_FAILED");
     assert.doesNotMatch(JSON.stringify(result),/private-id/);
+  }
+});
+
+test("account fingerprint normalizes email and never returns provider identity text", async () => {
+  const a=await readDriveAccountFingerprint("private-token",async()=>Response.json({user:{emailAddress:" Test@Example.test "}}));
+  const b=await readDriveAccountFingerprint("private-token",async()=>Response.json({user:{emailAddress:"test@example.test"}}));
+  assert.equal(a.accountEmailSha256,b.accountEmailSha256);
+  assert.match(a.accountEmailSha256,/^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(a),/Test|Example|private-token|@/);
+});
+
+test("about lookup failure preserves folder result and exposes safe status only", async () => {
+  const result=await withDriveSourceHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+    pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
+    listFiles:async()=>[],accountReader:readDriveAccountFingerprint,
+    fetchImpl:async()=>new Response("private-error-identity",{status:403}),
+  });
+  assert.equal(result.sourceHealth.ok,true);
+  assert.equal(result.sourceHealth.folders[0].folderVerified,true);
+  assert.equal(result.sourceHealth.accountIdentityCode,"ACCOUNT_LOOKUP_FAILED");
+  assert.equal(result.sourceHealth.accountIdentityHttpStatus,403);
+  assert.doesNotMatch(JSON.stringify(result),/private-error/);
+});
+
+test("about lookup timeout preserves completed folder access results", async () => {
+  const result=await withDriveSourceHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",timeoutMs:20,
+    pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
+    listFiles:async()=>[],accountReader:async()=>new Promise(()=>{}),
+  });
+  assert.equal(result.sourceHealth.ok,true);
+  assert.equal(result.sourceHealth.folders[0].folderVerified,true);
+  assert.equal(result.sourceHealth.accountIdentityCode,"ACCOUNT_LOOKUP_TIMEOUT");
+});
+
+test("refresh scope is summarized as four booleans without raw token or scope text", async () => {
+  for(const [scope,expected] of [
+    ["https://www.googleapis.com/auth/drive.file private-scope",{reported:true,driveMetadataReadonly:false,driveReadonly:false,driveFile:true,drive:false}],
+    ["https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive",{reported:true,driveMetadataReadonly:true,driveReadonly:true,driveFile:false,drive:true}],
+    [undefined,{reported:false}],
+  ]) {
+    const result=await withDriveSourceHealth(progress,{env:{...env,GOOGLE_CLIENT_ID:"test",GOOGLE_CLIENT_SECRET:"test",GOOGLE_REFRESH_TOKEN:"test"},ownerId:"admin",
+      pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
+      listFiles:async()=>[],
+      fetchImpl:async()=>Response.json({access_token:"private-token",...(scope===undefined?{}:{scope})}),
+    });
+    assert.deepEqual(result.sourceHealth.scopeSummary,expected);
+    assert.doesNotMatch(JSON.stringify(result),/private-token|private-scope|googleapis/);
   }
 });

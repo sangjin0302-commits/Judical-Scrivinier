@@ -1,5 +1,6 @@
 import { googleAccessToken } from "./dry-run-google-docs-sync.mjs";
 import { listFolderDocuments } from "./drive-document-registry.mjs";
+import { createHash } from "node:crypto";
 
 const PREVIEW_HOST = "civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app";
 const SAFE_DRIVE_REASONS = new Set(["insufficientPermissions", "accessNotConfigured",
@@ -15,6 +16,22 @@ export async function readFolderMetadata(folderId, token, fetchImpl) {
   return response.json();
 }
 
+export async function readDriveAccountFingerprint(token, fetchImpl) {
+  try {
+    const response = await fetchImpl("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return { accountIdentityCode: "ACCOUNT_LOOKUP_FAILED",
+      ...(Number.isInteger(response.status) && response.status >= 100 && response.status <= 599
+        ? { accountIdentityHttpStatus: response.status } : {}) };
+    const email = (await response.json())?.user?.emailAddress;
+    if (typeof email !== "string" || !email.trim() || email.length > 320) {
+      return { accountIdentityCode: "ACCOUNT_EMAIL_UNAVAILABLE" };
+    }
+    return { accountEmailSha256: createHash("sha256").update(email.trim().toLowerCase()).digest("hex") };
+  } catch { return { accountIdentityCode: "ACCOUNT_LOOKUP_FAILED" }; }
+}
+
 export function driveDiagnosticEnabled(env, ownerId) {
   const admins = String(env.DRIVE_DIAGNOSTIC_ADMIN_USER_IDS || "").split(",")
     .map((value) => value.trim()).filter(Boolean);
@@ -28,14 +45,34 @@ export function driveDiagnosticEnabled(env, ownerId) {
 export async function withDriveSourceHealth(progress, { pool, ownerId, env = process.env,
   fetchImpl = fetch, tokenProvider = googleAccessToken, listFiles = listFolderDocuments,
   checkFolder = readFolderMetadata,
+  accountReader = readDriveAccountFingerprint,
   timeoutMs = 8000 } = {}) {
   if (!driveDiagnosticEnabled(env, ownerId)) return progress;
   const controller = new AbortController();
   let timer;
+  let folderResult;
+  let scopeSummary = { reported: false };
   const timedFetch = (url, options = {}) => fetchImpl(url, { ...options, signal: controller.signal });
+  const tokenFetch = async (url, options) => {
+    const response = await timedFetch(url, options);
+    if (url === "https://oauth2.googleapis.com/token" && response.ok) {
+      try {
+        const payload = await response.clone().json();
+        if (typeof payload.scope === "string" && payload.scope.trim()) {
+          const scopes = new Set(payload.scope.trim().split(/\s+/));
+          scopeSummary = { reported: true,
+            driveMetadataReadonly: scopes.has("https://www.googleapis.com/auth/drive.metadata.readonly"),
+            driveReadonly: scopes.has("https://www.googleapis.com/auth/drive.readonly"),
+            driveFile: scopes.has("https://www.googleapis.com/auth/drive.file"),
+            drive: scopes.has("https://www.googleapis.com/auth/drive") };
+        }
+      } catch { /* An omitted/unreadable scope is unverified, never assumed. */ }
+    }
+    return response;
+  };
   const diagnostic = async () => {
     let token;
-    try { token = await tokenProvider(env, timedFetch); }
+    try { token = await tokenProvider(env, tokenFetch); }
     catch { return { ok: false, readOnly: true, code: "GOOGLE_AUTH_FAILED" }; }
     if (controller.signal.aborted) return { ok: false, readOnly: true, code: "TIMEOUT" };
     let folders;
@@ -88,11 +125,17 @@ export async function withDriveSourceHealth(progress, { pool, ownerId, env = pro
           folderVerified ? "FOLDER_LIST_FAILED" : "FOLDER_ACCESS_FAILED",
         ...failureMetadata }); }
     }
-    return { ok: counts.every((item) => item.ok), readOnly: true, folders: counts };
+    // Account diagnostics run independently after folder checks. Failure must not
+    // erase the already collected folder access result or expose the email.
+    folderResult = { ok: counts.every((item) => item.ok), readOnly: true, folders: counts, scopeSummary };
+    const identity = await accountReader(token, timedFetch);
+    return { ...folderResult, ...identity };
   };
   try {
     const sourceHealth = await Promise.race([diagnostic(), new Promise((resolve) => {
-      timer = setTimeout(() => { controller.abort(); resolve({ ok: false, readOnly: true, code: "TIMEOUT" }); }, timeoutMs);
+      timer = setTimeout(() => { controller.abort(); resolve(folderResult
+        ? { ...folderResult, accountIdentityCode: "ACCOUNT_LOOKUP_TIMEOUT" }
+        : { ok: false, readOnly: true, code: "TIMEOUT" }); }, timeoutMs);
     })]);
     return { ...progress, sourceHealth };
   } catch {
