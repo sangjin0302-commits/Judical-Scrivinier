@@ -66,6 +66,7 @@ test("desktop OAuth consent uses PKCE and permits existing client ID without a l
   assert.match(source, /code_challenge_method: "S256"/);
   assert.match(source, /code_verifier: codeVerifier/);
   assert.match(source, /oauthClient\.client_secret \? \{ client_secret:/);
-  assert.match(source, /documents\.readonly/);
+  const { googleOAuthScopes } = await import("../oauth-profile.mjs");
+  assert.ok(googleOAuthScopes().includes("https://www.googleapis.com/auth/documents.readonly"));
   assert.doesNotMatch(source, /console\.log\(token\)/);
 });
