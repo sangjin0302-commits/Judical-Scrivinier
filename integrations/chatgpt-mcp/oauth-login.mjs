@@ -18,7 +18,8 @@ const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64ur
 const scopes = [
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/script.scriptapp",
-  "https://www.googleapis.com/auth/documents.readonly"
+  "https://www.googleapis.com/auth/documents.readonly",
+  "https://www.googleapis.com/auth/drive.metadata.readonly"
 ];
 
 const server = createServer(async (request, response) => {

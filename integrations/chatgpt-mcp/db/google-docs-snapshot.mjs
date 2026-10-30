@@ -9,10 +9,15 @@ const SOURCES = new Map([
 
 // Docs holds prompt text. Official answers and grading keys must arrive through a
 // separate verified maintenance path; never infer them from the question document.
-export function snapshotFromGoogleDoc(document, sourceId) {
-  const parser = SOURCES.get(sourceId);
+export function snapshotFromGoogleDoc(document, sourceId, stage = null) {
+  const registeredStage = /^SRC-CIV-AUTO-[a-f0-9]{32}$/.test(sourceId) ? stage : null;
+  const parser = SOURCES.get(sourceId) ||
+    (registeredStage === "P1" ? parseP1Document : registeredStage === "P2" ? parseP2Document : null);
   if (!parser) throw new Error("unapproved Google Docs source");
   const parsed = parser(document, sourceId);
+  if (registeredStage && parsed.problems.length === 0) {
+    throw new Error("no official problems recognized in registered Google Doc");
+  }
   if (parsed.conflictingKeys.length) throw new Error("conflicting duplicate stable keys in Google Doc");
   const problems = parsed.problems.map((problem) => ({
     stableKey: problem.stableKey,
@@ -39,9 +44,9 @@ export function snapshotFromGoogleDoc(document, sourceId) {
   });
 }
 
-export async function fetchGoogleDocsSnapshotReadOnly({ documentId, sourceId, accessToken, fetchImpl }) {
+export async function fetchGoogleDocsSnapshotReadOnly({ documentId, sourceId, stage = null, accessToken, fetchImpl }) {
   const document = await fetchGoogleDocReadOnly({ documentId, accessToken, fetchImpl });
-  return snapshotFromGoogleDoc(document, sourceId);
+  return snapshotFromGoogleDoc(document, sourceId, stage);
 }
 
 // Diagnostic only. Existing baseline rows often have a Sheets sourceVersion and

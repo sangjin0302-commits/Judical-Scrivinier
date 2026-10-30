@@ -306,6 +306,7 @@ async function requireApprovals(client, row) {
 export async function applyApprovedSyncCandidate(pool, input) {
   const candidateId = required(input.candidateId, "candidateId");
   const actorId = required(input.actorId, "actorId");
+  const autoStageNew = input.autoStageNew === true;
   return inTransaction(pool, async (client) => {
     const candidate = await client.query(
       `SELECT c.*,r.document_id,r.revision_id FROM sync_candidates c
@@ -314,19 +315,31 @@ export async function applyApprovedSyncCandidate(pool, input) {
     if (candidate.rowCount !== 1) throw new Error("candidate not found");
     const row = candidate.rows[0];
     if (row.state === "APPLIED") return { ok: true, replayed: true, candidateId };
-    if (row.state !== "APPROVED") throw new Error("candidate approval state required");
+    if (autoStageNew) {
+      if (row.candidate_kind !== "NEW" || row.state !== "PENDING" ||
+          row.answer_changed || row.explanation_changed ||
+          row.candidate_payload?.gradingKeyVersion || row.candidate_payload?.answerDigest ||
+          row.candidate_payload?.explanationDigest) {
+        throw new Error("only unverified new prompt may be auto staged");
+      }
+    } else if (row.state !== "APPROVED") throw new Error("candidate approval state required");
     if (row.candidate_kind === "DUPLICATE") throw new Error("duplicate candidate cannot be applied");
+    let existingSourceOrder = null;
     if (row.candidate_kind !== "NEW") {
       const current = await client.query(
-        `SELECT current_problem_version_id FROM problems
+        `SELECT current_problem_version_id,source_order FROM problems
           WHERE subject_id=$1 AND stable_key=$2 FOR UPDATE`, [SUBJECT, row.stable_key]);
       if (current.rowCount !== 1 ||
           String(current.rows[0].current_problem_version_id) !==
             String(row.candidate_payload.baseVersionId || row.candidate_payload.currentVersionId)) {
         throw new Error("stale sync candidate rejected");
       }
+      existingSourceOrder = Number(current.rows[0].source_order);
+      if (!Number.isSafeInteger(existingSourceOrder) || existingSourceOrder < 0) {
+        throw new Error("existing source order invalid");
+      }
     }
-    await requireApprovals(client, row);
+    if (!autoStageNew) await requireApprovals(client, row);
     const payload = row.candidate_payload;
     if (row.candidate_kind === "DELETE_CANDIDATE") {
       await client.query(
@@ -336,6 +349,30 @@ export async function applyApprovedSyncCandidate(pool, input) {
       await client.query("UPDATE problems SET published=false WHERE subject_id=$1 AND stable_key=$2",
         [SUBJECT, row.stable_key]);
     } else if (row.candidate_kind !== "UNCHANGED") {
+      // Snapshot order is local to a Google Doc. Persist a unique bank-wide
+      // order for new problems; a document edit must not reorder old problems.
+      let sourceOrder = existingSourceOrder;
+      if (row.candidate_kind === "NEW") {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`source-order:${SUBJECT}`]);
+        if (autoStageNew) {
+          const rawId = row.stable_key.split("|").slice(1).join("|");
+          const duplicate = await client.query(
+            `SELECT p.stable_key FROM problems p
+               JOIN problem_versions v ON v.version_id=p.current_problem_version_id
+              WHERE p.subject_id=$1 AND p.stable_key<>$2
+                AND (substring(p.stable_key from position('|' in p.stable_key)+1)=$3
+                     OR v.prompt_digest=$4)
+              LIMIT 1`, [SUBJECT, row.stable_key, rawId, payload.promptDigest]);
+          if (duplicate.rowCount) throw new Error("cross-document duplicate requires review");
+        }
+        const nextOrder = await client.query(
+          `SELECT COALESCE(MAX(source_order), -1) + 1 AS source_order
+             FROM problems WHERE subject_id=$1`, [SUBJECT]);
+        sourceOrder = Number(nextOrder.rows[0].source_order);
+        if (!Number.isSafeInteger(sourceOrder) || sourceOrder < 0) {
+          throw new Error("next source order invalid");
+        }
+      }
       if (row.candidate_kind === "MODIFIED" &&
           (row.answer_changed || row.explanation_changed) && payload.gradingKeyVersion) {
         const key = await client.query(
@@ -350,7 +387,7 @@ export async function applyApprovedSyncCandidate(pool, input) {
           `INSERT INTO problems(subject_id,stable_key,unit_id,stage,source_order,source_ref,source_version,
              prompt_text,max_points,published,selection_metadata,content_digest)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,false,$10,$11)`,
-          [SUBJECT, row.stable_key, payload.unitId, payload.stage, payload.sourceOrder,
+          [SUBJECT, row.stable_key, payload.unitId, payload.stage, sourceOrder,
             `gdoc:${row.document_id}#${payload.sourceLocator}`, payload.sourceVersion, payload.promptText,
             payload.maxPoints, JSON.stringify(payload.selectionMetadata), payload.promptDigest]);
       }
@@ -361,7 +398,7 @@ export async function applyApprovedSyncCandidate(pool, input) {
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          ON CONFLICT(subject_id,stable_key,source_version) DO NOTHING RETURNING version_id`,
         [SUBJECT, row.stable_key, row.document_id, row.revision_id, payload.sourceVersion, payload.stage,
-          payload.unitId, payload.sourceOrder, payload.promptText, payload.maxPoints, payload.promptDigest,
+          payload.unitId, sourceOrder, payload.promptText, payload.maxPoints, payload.promptDigest,
           payload.answerDigest, payload.explanationDigest, payload.gradingKeyVersion,
           JSON.stringify(payload.selectionMetadata)]);
       let versionId = version.rows[0]?.version_id;
@@ -382,7 +419,7 @@ export async function applyApprovedSyncCandidate(pool, input) {
            prompt_text=$6,max_points=$7,selection_metadata=$8,content_digest=$9,current_problem_version_id=$10,
            published=CASE WHEN $13 THEN false ELSE published END
           WHERE subject_id=$11 AND stable_key=$12`,
-        [payload.unitId, payload.stage, payload.sourceOrder, `gdoc:${row.document_id}#${payload.sourceLocator}`,
+        [payload.unitId, payload.stage, sourceOrder, `gdoc:${row.document_id}#${payload.sourceLocator}`,
           payload.sourceVersion, payload.promptText, payload.maxPoints, JSON.stringify(payload.selectionMetadata),
           payload.promptDigest, versionId, SUBJECT, row.stable_key, row.prompt_changed]);
       await client.query(
@@ -398,8 +435,10 @@ export async function applyApprovedSyncCandidate(pool, input) {
       `INSERT INTO audit_events(actor_id,subject_id,action,aggregate_type,aggregate_id,payload_digest,metadata)
        VALUES($1,$2,'DOCS_SYNC_APPLY','sync_candidate',$3,$4,$5)`,
       [actorId, SUBJECT, candidateId, row.candidate_digest,
-        JSON.stringify({ kind: row.candidate_kind, documentId: row.document_id, revisionId: row.revision_id })]);
-    return { ok: true, replayed: false, candidateId, kind: row.candidate_kind };
+        JSON.stringify({ kind: row.candidate_kind, documentId: row.document_id,
+          revisionId: row.revision_id, autoStaged: autoStageNew })]);
+    return { ok: true, replayed: false, candidateId, kind: row.candidate_kind,
+      autoStaged: autoStageNew };
   });
 }
 

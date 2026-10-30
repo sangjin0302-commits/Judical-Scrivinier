@@ -112,6 +112,11 @@ test("dry-run reports metadata-only baseline churn separately from changed promp
 
 test("snapshot rejects unexpected source and conflicting duplicate key", () => {
   assert.throws(() => snapshotFromGoogleDoc(document(), "SRC-CIV-999"), /unapproved/);
+  const automatic = "SRC-CIV-AUTO-" + "a".repeat(32);
+  assert.throws(() => snapshotFromGoogleDoc(document(), automatic), /unapproved/);
+  assert.equal(snapshotFromGoogleDoc(document(), automatic, "P1").problems[0].stableKey,
+    automatic + "|민법25032");
+  assert.throws(() => snapshotFromGoogleDoc(document(), automatic, "P2"), /no official problems recognized/);
   const conflicting = document();
   conflicting.tabs[0].documentTab.body.content.push(paragraph("[민법25032] 관습 | O 지문: 다른 지문.", 80));
   assert.throws(() => snapshotFromGoogleDoc(conflicting, "SRC-CIV-004"), /conflicting duplicate/);

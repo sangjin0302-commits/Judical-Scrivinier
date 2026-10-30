@@ -10,6 +10,7 @@ const ALLOWED = new Set([
   "0004_google_docs_sync.sql",
   "0008_exam_selection_indexes.sql",
   "0009_exam_review_due.sql",
+  "0010_drive_document_registry.sql",
 ]);
 
 function migrationBody(source) {

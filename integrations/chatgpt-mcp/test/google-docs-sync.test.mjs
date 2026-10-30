@@ -190,6 +190,7 @@ test("approved new Docs prompt creates an unpublished version in one transaction
           promptDigest: sha256("새 문제") },
       }] };
       if (sql.includes("FROM sync_approvals")) return { rows: [{ approval_type: "CONTENT" }] };
+      if (sql.includes("MAX(source_order)")) return { rows: [{ source_order: "987" }] };
       if (sql.includes("INSERT INTO problem_versions")) { writes.push({ sql, args }); return { rows: [{ version_id: "v2" }] }; }
       writes.push({ sql, args });
       return { rowCount: 1, rows: [] };
@@ -204,8 +205,54 @@ test("approved new Docs prompt creates an unpublished version in one transaction
   assert.ok(inserted);
   assert.match(inserted.sql, /published,selection_metadata,content_digest/);
   assert.match(inserted.sql, /false/);
+  assert.equal(inserted.args[4], 987);
+  const version = writes.find((entry) => entry.sql?.includes("INSERT INTO problem_versions"));
+  assert.equal(version.args[7], 987);
   assert.ok(writes.some((entry) => entry.sql?.includes("UPDATE sync_candidates SET state='APPLIED'")));
   assert.equal(writes.at(-1), "COMMIT");
+});
+
+test("new Docs prompt auto stages unpublished without approval and blocks cross-document duplicate", async () => {
+  const queries = [];
+  let duplicate = false;
+  const client = {
+    async query(sql, args = []) {
+      queries.push({ sql, args });
+      if (sql.includes("FROM sync_candidates c")) return { rowCount: 1, rows: [{
+        candidate_id: "c-auto", state: "PENDING", candidate_kind: "NEW",
+        stable_key: "SRC-CIV-AUTO-test|Q77", document_id: "doc-new", revision_id: "r1",
+        prompt_changed: true, answer_changed: false, explanation_changed: false,
+        candidate_digest: "d".repeat(64),
+        candidate_payload: { ...problem({ stableKey: "SRC-CIV-AUTO-test|Q77",
+          sourceVersion: "docs:1", promptText: "새 문항", sourceOrder: 0,
+          answerDigest: null, explanationDigest: null, gradingKeyVersion: null }),
+          promptDigest: sha256("새 문항") },
+      }] };
+      if (sql.includes("JOIN problem_versions v ON v.version_id=p.current_problem_version_id")) {
+        return { rowCount: duplicate ? 1 : 0, rows: duplicate ? [{ stable_key: "old" }] : [] };
+      }
+      if (sql.includes("MAX(source_order)")) return { rows: [{ source_order: "501" }] };
+      if (sql.includes("INSERT INTO problem_versions")) return { rows: [{ version_id: "v-auto" }] };
+      return { rowCount: 1, rows: [] };
+    },
+    release() {},
+  };
+  const pool = { connect: async () => client };
+  const result = await applyApprovedSyncCandidate(pool, {
+    candidateId: "c-auto", actorId: "maintenance:folder-sync", autoStageNew: true,
+  });
+  assert.equal(result.autoStaged, true);
+  assert.equal(queries.some(({ sql }) => sql.includes("FROM sync_approvals")), false);
+  const insert = queries.find(({ sql }) => sql.includes("INSERT INTO problems"));
+  assert.equal(insert.args[4], 501);
+  assert.match(insert.sql, /published,selection_metadata,content_digest/);
+  duplicate = true;
+  queries.length = 0;
+  await assert.rejects(() => applyApprovedSyncCandidate(pool, {
+    candidateId: "c-auto", actorId: "maintenance:folder-sync", autoStageNew: true,
+  }), /cross-document duplicate requires review/);
+  assert.equal(queries.some(({ sql }) => sql.includes("INSERT INTO problems")), false);
+  assert.equal(queries.at(-1).sql, "ROLLBACK");
 });
 
 test("answer-only change is independently marked for grading approval", () => {
