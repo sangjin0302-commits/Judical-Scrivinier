@@ -72,7 +72,7 @@ export async function registerDiscoveredDocument(client, file) {
       [folderId, subjectId, stage]);
     if (!folder.rowCount) throw new Error("unregistered folder");
     const prior = await client.query(
-      "SELECT source_id,folder_id,registration_kind,registration_status,last_synced_drive_version FROM document_registry WHERE document_id=$1 FOR UPDATE",
+      "SELECT source_id,folder_id,registration_kind,registration_status,failure_code,last_synced_drive_version FROM document_registry WHERE document_id=$1 FOR UPDATE",
       [documentId]);
     if (prior.rowCount) {
       const row = prior.rows[0];
@@ -88,13 +88,14 @@ export async function registerDiscoveredDocument(client, file) {
           "INSERT INTO document_registry_events(document_id,event_kind,details) VALUES($1,'MOVE_REVIEW',$2::jsonb)",
           [documentId, JSON.stringify({ observedFolderId: folderId })]);
         await client.query("COMMIT");
-        return { sourceId: row.source_id, status: "REVIEW", replayed: true };
+        return { sourceId: row.source_id, status: "REVIEW", reviewReason: "FOLDER_MOVE", replayed: true };
       }
       await client.query(
         "UPDATE document_registry SET title=$2,last_seen_at=now(),updated_at=now() WHERE document_id=$1",
         [documentId, title]);
       await client.query("COMMIT");
       return { sourceId: row.source_id, status: row.registration_status,
+        reviewReason: row.failure_code || null,
         lastSyncedDriveVersion: row.last_synced_drive_version, replayed: true };
     }
     const sourceId = sourceIdFor(subjectId);

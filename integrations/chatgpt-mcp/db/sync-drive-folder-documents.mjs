@@ -2,7 +2,8 @@ import pg from "pg";
 
 import { googleAccessToken } from "./dry-run-google-docs-sync.mjs";
 import { listFolderDocuments, missingManagedDocuments, registerDiscoveredDocument,
-  markMissingDocumentForReview, recordDocumentFailure, recordDocumentSync } from "./drive-document-registry.mjs";
+  markMissingDocumentForReview, recordDocumentFailure, recordDocumentSync,
+  crossDocumentDuplicateCandidates } from "./drive-document-registry.mjs";
 import { fetchGoogleDocReadOnly, detectGoogleDocsChanges, applyApprovedSyncCandidate,
   sha256 } from "./google-docs-sync.mjs";
 import { snapshotFromGoogleDoc } from "./google-docs-snapshot.mjs";
@@ -26,10 +27,37 @@ function countsFor(result) {
     .map((kind) => [kind, result.candidates.filter((item) => item.candidate_kind === kind).length]));
 }
 
+export async function findCrossDocumentDuplicates(pool, snapshot) {
+  const rawIds = snapshot.problems.map((problem) => problem.stableKey.split("|").slice(1).join("|"));
+  const digests = snapshot.problems.map((problem) => problem.promptDigest);
+  const seenDigests = new Set();
+  const withinDocument = snapshot.problems.filter((problem) => {
+    if (!problem.promptDigest) return false;
+    if (seenDigests.has(problem.promptDigest)) return true;
+    seenDigests.add(problem.promptDigest);
+    return false;
+  }).map((problem) => ({ stableKey: problem.stableKey, kind: "WITHIN_DOCUMENT_DUPLICATE",
+    matchedKeys: [] }));
+  const current = await pool.query(
+    `SELECT p.stable_key AS "stableKey",v.prompt_digest AS "promptDigest",
+            m.document_id AS "documentId"
+       FROM problems p
+       JOIN problem_versions v ON v.version_id=p.current_problem_version_id
+       LEFT JOIN problem_source_map m ON m.subject_id=p.subject_id
+        AND m.stable_key=p.stable_key AND m.active=true
+      WHERE p.subject_id='CIVIL'
+        AND (substring(p.stable_key from position('|' in p.stable_key)+1)=ANY($1::text[])
+             OR v.prompt_digest=ANY($2::text[]))`, [rawIds, digests]);
+  return [...withinDocument, ...crossDocumentDuplicateCandidates(snapshot.problems.map((problem) => ({
+    ...problem, documentId: snapshot.documentId,
+  })), current.rows)];
+}
+
 export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = fetch,
   Pool = pg.Pool, tokenProvider = googleAccessToken, listFiles = listFolderDocuments,
   fetchDocument = fetchGoogleDocReadOnly, snapshotParser = snapshotFromGoogleDoc,
   detect = detectGoogleDocsChanges, apply = applyApprovedSyncCandidate,
+  findDuplicates = findCrossDocumentDuplicates,
   register = registerDiscoveredDocument, record = recordDocumentSync,
   markMissing = markMissingDocumentForReview, recordFailure = recordDocumentFailure } = {}) {
   const connectionString = env.DATABASE_PUBLIC_URL || env.DATABASE_URL;
@@ -67,7 +95,8 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
       let registration;
       try {
         registration = await withClient(pool, (client) => register(client, file));
-        if (["EXTERNAL", "REVIEW"].includes(registration.status)) {
+        if (registration.status === "EXTERNAL" ||
+            (registration.status === "REVIEW" && registration.reviewReason === "FOLDER_MOVE")) {
           results.push({ documentId: file.documentId, sourceId: registration.sourceId,
             status: registration.status });
           continue;
@@ -84,6 +113,20 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
           (Number.isFinite(file.sizeBytes) && file.sizeBytes >= warningBytes);
         const snapshot = snapshotParser(document, registration.sourceId, file.stage);
         if (!snapshot.problems.length) throw new Error("NO_PROBLEMS");
+        const crossDuplicates = await findDuplicates(pool, snapshot);
+        if (crossDuplicates.length) {
+          await withClient(pool, (client) => record(client, file.documentId, {
+            revisionId: snapshot.revisionId, driveVersion: file.driveVersion,
+            counts: { CROSS_DOCUMENT_DUPLICATE: crossDuplicates.length,
+              duplicateStableKeys: crossDuplicates.map((item) => item.stableKey),
+              capacityWarning },
+            problemCount: snapshot.problems.length, status: "REVIEW",
+          }));
+          results.push({ documentId: file.documentId, sourceId: registration.sourceId,
+            status: "REVIEW", code: "CROSS_DOCUMENT_DUPLICATE",
+            duplicateCount: crossDuplicates.length });
+          continue;
+        }
         const requestId = "drive-detect:" + sha256({ documentId: file.documentId,
           revisionId: snapshot.revisionId, digest: snapshot.contentDigest });
         const detected = await detect(pool, { ...snapshot, requestId }, "maintenance:drive-folder");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { syncDriveFolderDocuments } from "../db/sync-drive-folder-documents.mjs";
+import { findCrossDocumentDuplicates, syncDriveFolderDocuments } from "../db/sync-drive-folder-documents.mjs";
 
 class FakePool {
   constructor() { this.ended = false; }
@@ -10,6 +10,7 @@ class FakePool {
       { folderId: "folder-2", subjectId: "CIVIL", stage: "P2", enabled: true },
     ] };
     if (sql.includes("FROM document_registry")) return { rows: [] };
+    if (sql.includes("FROM problems p")) return { rows: [] };
     throw new Error("unexpected query");
   }
   async connect() { return { release() {} }; }
@@ -60,6 +61,69 @@ test("only NEW candidates auto-stage; MODIFIED remains pending", async () => {
   assert.deepEqual(applied.map((item) => item.candidateId), ["candidate-new"]);
   assert.equal(applied[0].autoStageNew, true);
   assert.equal(result.appliedToPublishedBank, false);
+});
+
+test("cross-document duplicate is recorded for review before detect or staging", async () => {
+  let recorded;
+  const result = await syncDriveFolderDocuments({ env, Pool: FakePool,
+    tokenProvider: async () => "token",
+    listFiles: async (folderId) => folderId === "folder-1" ? [doc("duplicate-doc")] : [],
+    register: async () => ({ sourceId: "SRC-CIV-AUTO-abc", status: "DISCOVERED" }),
+    fetchDocument: async () => ({ documentId: "duplicate-doc" }),
+    snapshotParser: () => ({ ...snapshotParser({}, "SRC-CIV-AUTO-abc"),
+      documentId: "duplicate-doc", revisionId: "r2" }),
+    findDuplicates: async () => [{ stableKey: "SRC-CIV-AUTO-abc|Q1" }],
+    detect: async () => { throw new Error("duplicate must not be detected as new"); },
+    apply: async () => { throw new Error("duplicate must not be staged"); },
+    record: async (_client, _id, value) => { recorded = value; },
+  });
+  assert.equal(result.documents[0].status, "REVIEW");
+  assert.equal(result.documents[0].code, "CROSS_DOCUMENT_DUPLICATE");
+  assert.equal(recorded.status, "REVIEW");
+  assert.equal(recorded.counts.CROSS_DOCUMENT_DUPLICATE, 1);
+});
+
+test("cross-document duplicate lookup matches raw ID and exact prompt digest", async () => {
+  const queries = [];
+  const pool = { query: async (sql, args) => {
+    queries.push({ sql, args });
+    return { rows: [{ stableKey: "SRC-CIV-004|Q1", promptDigest: "digest-a", documentId: "old" },
+      { stableKey: "SRC-CIV-004B|Q2", promptDigest: "digest-b", documentId: "other" }] };
+  } };
+  const duplicates = await findCrossDocumentDuplicates(pool, { documentId: "new", problems: [
+    { stableKey: "SRC-CIV-AUTO-new|Q1", promptDigest: "digest-b" },
+  ] });
+  assert.equal(duplicates.length, 1);
+  assert.equal(duplicates[0].matchedKeys.length, 2);
+  assert.deepEqual(queries[0].args, [["Q1"], ["digest-b"]]);
+});
+
+test("same prompt repeated inside new Doc is held for review", async () => {
+  const pool = { query: async () => ({ rows: [] }) };
+  const duplicates = await findCrossDocumentDuplicates(pool, { documentId: "new", problems: [
+    { stableKey: "SRC-CIV-AUTO-new|Q1", promptDigest: "same" },
+    { stableKey: "SRC-CIV-AUTO-new|Q2", promptDigest: "same" },
+  ] });
+  assert.equal(duplicates.length, 1);
+  assert.equal(duplicates[0].kind, "WITHIN_DOCUMENT_DUPLICATE");
+});
+
+test("reviewed duplicate can be reparsed after correction while a moved file stays held", async () => {
+  const parsed = [];
+  const result = await syncDriveFolderDocuments({ env, Pool: FakePool,
+    tokenProvider: async () => "token",
+    listFiles: async (folderId) => folderId === "folder-1"
+      ? [doc("corrected-doc"), doc("moved-doc")] : [],
+    register: async (_client, file) => ({ sourceId: "SRC-CIV-AUTO-abc", status: "REVIEW",
+      reviewReason: file.documentId === "moved-doc" ? "FOLDER_MOVE" : null }),
+    fetchDocument: async ({ documentId }) => { parsed.push(documentId); return { documentId }; },
+    snapshotParser,
+    detect: async () => ({ counts: { NEW: 0 }, candidates: [] }),
+    record: async () => {},
+  });
+  assert.deepEqual(parsed, ["corrected-doc"]);
+  assert.equal(result.documents.find((item) => item.documentId === "corrected-doc").status, "STAGED");
+  assert.equal(result.documents.find((item) => item.documentId === "moved-doc").status, "REVIEW");
 });
 
 test("unchanged Drive version skips Docs fetch and parser", async () => {
