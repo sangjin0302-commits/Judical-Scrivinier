@@ -10,9 +10,24 @@ function normalizedUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
+const PR5_ACCEPTANCE_BRANCH = "integration/civil-exam-only";
+const PR5_ACCEPTANCE_HOST = "civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app";
+
+function resourceUrl(env) {
+  if (String(env.MCP_RESOURCE_URL || "").trim()) return requiredEnv("MCP_RESOURCE_URL", env);
+  if (
+    env.VERCEL_ENV === "preview" &&
+    env.VERCEL_GIT_COMMIT_REF === PR5_ACCEPTANCE_BRANCH &&
+    env.VERCEL_BRANCH_URL === PR5_ACCEPTANCE_HOST
+  ) {
+    return `https://${PR5_ACCEPTANCE_HOST}/mcp`;
+  }
+  return requiredEnv("MCP_RESOURCE_URL", env);
+}
+
 export function authConfig(env = process.env) {
   const issuer = normalizedUrl(requiredEnv("WORKOS_AUTHKIT_DOMAIN", env));
-  const resource = normalizedUrl(requiredEnv("MCP_RESOURCE_URL", env));
+  const resource = normalizedUrl(resourceUrl(env));
   const allowedUsers = new Set(
     requiredEnv("ALLOWED_WORKOS_USER_IDS", env)
       .split(",")

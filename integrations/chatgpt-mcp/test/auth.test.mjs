@@ -28,6 +28,27 @@ test("auth config rejects a missing allowlist", () => {
   );
 });
 
+test("PR5 acceptance Preview derives only its registered WorkOS resource", () => {
+  const preview = {
+    WORKOS_AUTHKIT_DOMAIN: "https://civil-test.authkit.app",
+    ALLOWED_WORKOS_USER_IDS: "user_1",
+    VERCEL_ENV: "preview",
+    VERCEL_GIT_COMMIT_REF: "integration/civil-exam-only",
+    VERCEL_BRANCH_URL: "civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app",
+  };
+  assert.equal(
+    authConfig(preview).resource,
+    "https://civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app/mcp",
+  );
+  for (const change of [
+    { VERCEL_ENV: "production" },
+    { VERCEL_GIT_COMMIT_REF: "another-branch" },
+    { VERCEL_BRANCH_URL: "another-preview.vercel.app" },
+  ]) {
+    assert.throws(() => authConfig({ ...preview, ...change }), /MCP_RESOURCE_URL/);
+  }
+});
+
 test("desktop OAuth consent uses PKCE and permits existing client ID without a local secret", async () => {
   const source = await readFile(new URL("../oauth-login.mjs", import.meta.url), "utf8");
   assert.match(source, /code_challenge_method: "S256"/);
