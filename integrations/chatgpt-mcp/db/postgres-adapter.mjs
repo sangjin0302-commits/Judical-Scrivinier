@@ -5,6 +5,7 @@ import { getExamProgress } from "./exam-progress.mjs";
 import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "./p2-semantic-evaluation.mjs";
 import { selectExamCandidates } from "./fast-exam-selection.mjs";
 import { normalizeP2Submission } from "./p2-submission-contract.mjs";
+import { validateP2FixedCriteria } from "./p2-fixed-criteria.mjs";
 
 const SUBJECT = "CIVIL";
 const P2_SCORE_FIELDS = ["issue", "outline", "law", "precedent", "application", "conclusion", "expression"];
@@ -269,8 +270,15 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
         const keyRow = keys.get(item.stable_key);
         const payload = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
           gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
+        if (Object.hasOwn(payload, "fixedCriteriaManifest")) {
+          validateP2FixedCriteria(payload.fixedCriteriaManifest,
+            { elements: payload.fixedCriteriaManifest?.requiredElements },
+            { modelAnswer: payload.answer, rubric: payload.rubric });
+        }
         return { key: item.stable_key, maxPoints: Number(item.max_points), modelAnswer: payload.answer,
-          rubric: payload.rubric, rationale: payload.rationale, source: payload.source };
+          rubric: payload.rubric, rationale: payload.rationale, source: payload.source,
+          ...(Object.hasOwn(payload, "fixedCriteriaManifest")
+            ? { fixedCriteriaManifest: payload.fixedCriteriaManifest } : {}) };
       }) };
   } finally { client.release(); }
 }
@@ -331,10 +339,16 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
       const keyRow = keys.get(item.stable_key);
       const gradingSource = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
         gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
+      // Trust only the manifest inside the exact encrypted grading-key snapshot.
+      // Legacy keys remain compatible; the global P2 acceptance gate is unchanged.
+      const fixedCriteria = Object.hasOwn(gradingSource, "fixedCriteriaManifest")
+        ? validateP2FixedCriteria(gradingSource.fixedCriteriaManifest, evaluation.semanticAnalysis,
+          { modelAnswer: gradingSource.answer, rubric: gradingSource.rubric }) : null;
       const semanticAudit = buildP2SemanticAudit(evaluation.semanticAnalysis, {
         modelAnswer: gradingSource.answer, rubric: gradingSource.rubric,
         originalAnswer: originalsByKey.get(item.stable_key), maxPoints: Number(item.max_points),
         awardedPoints: evaluation.awardedPoints, submissionStatus });
+      if (fixedCriteria) semanticAudit.fixedCriteria = fixedCriteria;
       const awardedPoints = semanticAudit.learningScore.displayedPoints;
       const payload = { correction: evaluation.correction || "", missingOutline: evaluation.missingOutline || "",
         wrongLaw: evaluation.wrongLaw || "", applicationFix: evaluation.applicationFix || "",

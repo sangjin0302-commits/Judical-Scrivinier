@@ -5,7 +5,7 @@ const hash = value => createHash("sha256").update(value, "utf8").digest("hex");
 const categories = new Set(["ISSUE", "LAW", "ELEMENT", "PRECEDENT", "APPLICATION", "CONCLUSION"]);
 const identity = value => clean(value).toLocaleLowerCase("ko-KR");
 
-// Private experiment helper only: creating a manifest is NOT approval or publication.
+// Creating a manifest is NOT approval or publication.
 // Callers must hold this manifest fixed before evaluating any candidate answers.
 export function createP2CriteriaManifest(requiredElements, { modelAnswer, rubric } = {}) {
   const source = clean(`${modelAnswer || ""} ${rubric || ""}`);
@@ -34,7 +34,8 @@ export function createP2CriteriaManifest(requiredElements, { modelAnswer, rubric
 }
 
 // Checks decomposition only. Status/evidence/score validation remains the existing
-// buildP2SemanticAudit contract. This function is not connected to commitP2 yet.
+// buildP2SemanticAudit contract. Runtime callers load the manifest from the
+// encrypted key snapshot, never from the submitted evaluation.
 export function validateP2FixedCriteria(manifest, analysis, source) {
   if (!manifest || manifest.version !== "p2-fixed-criteria-v1") throw new Error("fixed criteria manifest required");
   const canonical = createP2CriteriaManifest(manifest.requiredElements, source);

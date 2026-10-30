@@ -23,7 +23,13 @@ Baseline: 0571f9096fc23fb3012250dd67de14ccc51b6129. No operating data changed.
 - Actual P2 originals were saved before protected grading sources were returned. Progress correctly reports pending grades; no P2 score was committed.
 - Commit `edffcdbdf92a38df182f194e202b68af977b8120`: GitHub Actions run `41074861628` succeeded; Vercel reported successful Preview deployment. These checks do not establish semantic grading accuracy or Drive access.
 - Actual repeated model evaluation found classification instability. Source-only fixed criteria improved one tested pair to identical classifications and scores across three runs; evidence excerpts differed. This is limited consistency evidence, not a general accuracy pass.
-- Added a private fixed-criteria validator and separated classification agreement from excerpt agreement. `npm test`: 138 passed, zero failed/skipped. `git diff --check`: exit 0. The validator is not yet connected to runtime commit; see `p2-fixed-criteria-boundary.md`.
+- Added a private fixed-criteria validator and separated classification agreement from excerpt agreement. Initial `npm test`: 138 passed, zero failed/skipped.
+
+## October 31 follow-up
+- Connected fixed-criteria validation conditionally to prepare/commit when the exact encrypted key snapshot contains the manifest. Legacy snapshots are unchanged; no actual key was republished. The global P2 gate remains closed.
+- `node test/exam-flow.integration.mjs` against disposable localhost PostgreSQL 18: exit 0. Fixed denominator enforcement, rejection of caller manifest replacement, rollback/original preservation, previous key snapshot preservation and valid commit replay passed. The temporary container was removed; operating services were not changed.
+- The private evaluation runner omitted the issued question context. Those results are invalid as learner scores. Added a required-context input builder with issued prompt digest verification; actual prompt hashes match all three issued snapshots. Re-evaluation remains separate from mechanical test success.
+- `npm test`: 141 passed, zero failed/skipped. `git diff --check`: exit 0. No private prompt, original, model answer or rubric is included in this evidence.
 
 ## Still unverified
 P2 semantic acceptance and authenticated score commit; Vercel Drive OAuth runtime; production transition. Drive diagnostic code and local tests exist, but no authenticated deployed diagnostic request was sent because the CLI returned empty sensitive Preview values. P2 commit deployment gate remains unchanged. No merge or production cutover.

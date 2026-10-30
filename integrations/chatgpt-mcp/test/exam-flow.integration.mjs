@@ -6,6 +6,7 @@ import { performance } from "node:perf_hooks";
 import pg from "pg";
 
 import { createPostgresExecutor, gradingAad } from "../db/postgres-adapter.mjs";
+import { createP2CriteriaManifest } from "../db/p2-fixed-criteria.mjs";
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("TEST_DATABASE_URL required");
@@ -24,11 +25,11 @@ const p2Keys = ["SRC-CIV-005|2025-제1회-문8-소문항1", "SRC-CIV-005|2025-�
 const migration = (name) => readFile(new URL(`../db/migrations/${name}`, import.meta.url), "utf8");
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
-function encryptedKey(stableKey, payload) {
+function encryptedKey(stableKey, payload, keyVersion = "v1") {
   const text = JSON.stringify(payload);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey, iv);
-  cipher.setAAD(gradingAad("CIVIL", stableKey, "v1", keyId));
+  cipher.setAAD(gradingAad("CIVIL", stableKey, keyVersion, keyId));
   const body = Buffer.concat([cipher.update(text), cipher.final()]);
   return { encrypted: Buffer.concat([iv, cipher.getAuthTag(), body]), payloadDigest: digest(text) };
 }
@@ -176,11 +177,68 @@ try {
     execute("issueCivilP1", input, concurrentContext)));
   assert.deepEqual(replayedConcurrentSets.map((set) => set.setId),
     concurrentSets.map((set) => set.setId), "concurrent allocation retries retain their sets");
+  // Append a new synthetic key version; a pre-existing set must keep v1.
+  const oldContext = { ownerId: "synthetic-old-snapshot" };
+  const oldSet = await execute("issueCivilP2", { requestId: "old-snapshot",
+    mode: "문제지정", specificKeys: [p2Keys[0]] }, oldContext);
+  await execute("prepareCivilP2Grade", { setId: oldSet.setId, answers }, oldContext);
+  const fixedSource = { answer: "요건과 결론을 확인한다.", rubric: "요건과 결론을 확인한다." };
+  const fixedCriteriaManifest = createP2CriteriaManifest([
+    { category: "ELEMENT", criterion: "요건", modelExcerpt: "요건" },
+    { category: "CONCLUSION", criterion: "결론", modelExcerpt: "결론" },
+  ], { modelAnswer: fixedSource.answer, rubric: fixedSource.rubric });
+  for (const stableKey of p2Keys) {
+    const { encrypted, payloadDigest } = encryptedKey(stableKey,
+      { ...fixedSource, fixedCriteriaManifest }, "v2-fixed");
+    await pool.query(`UPDATE private_grading_keys SET active_for_grading=false
+      WHERE subject_id='CIVIL' AND stable_key=$1`, [stableKey]);
+    await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
+      encrypted_payload,payload_digest,encryption_key_id,verification_state,active_for_grading)
+      VALUES('CIVIL',$1,'v2-fixed',$2,$3,$4,'verified',true)`,
+      [stableKey, encrypted, payloadDigest, keyId]);
+  }
+  const oldReplay = await execute("prepareCivilP2Grade", { setId: oldSet.setId, answers }, oldContext);
+  assert.ok(oldReplay.rubrics.every(item => !Object.hasOwn(item, "fixedCriteriaManifest")));
+  const oldCommitted = await execute("commitCivilP2Grade", { setId: oldSet.setId, evaluations }, oldContext);
+  assert.deepEqual(oldCommitted.summaries.map(item => item.awardedPoints), [15, 0]);
+  const oldSnapshot = await pool.query("SELECT key_version FROM issue_set_items WHERE set_id=$1", [oldSet.setId]);
+  assert.ok(oldSnapshot.rows.every(item => item.key_version === "v1"));
+
+  const fixedContext = { ownerId: "synthetic-fixed-criteria" };
+  const fixedSet = await execute("issueCivilP2", { requestId: "fixed-snapshot",
+    mode: "문제지정", specificKeys: [p2Keys[0]] }, fixedContext);
+  const fixedPrepared = await execute("prepareCivilP2Grade", { setId: fixedSet.setId, answers }, fixedContext);
+  assert.ok(fixedPrepared.rubrics.every(item => item.fixedCriteriaManifest.criteriaDigest === fixedCriteriaManifest.criteriaDigest));
+  // A caller-supplied reduced manifest cannot replace the server's two-element set.
+  const forged = evaluations.map(item => ({ ...item, fixedCriteriaManifest:
+    createP2CriteriaManifest(item.semanticAnalysis.elements,
+      { modelAnswer: fixedSource.answer, rubric: fixedSource.rubric }) }));
+  await assert.rejects(execute("commitCivilP2Grade", { setId: fixedSet.setId,
+    evaluations: forged }, fixedContext), /differ from fixed manifest/);
+  const rejectedState = await pool.query(`SELECT s.state,
+    (SELECT count(*)::int FROM p2_grades g WHERE g.submission_id=s.submission_id) AS grades,
+    (SELECT count(*)::int FROM original_answers oa WHERE oa.submission_id=s.submission_id) AS originals
+    FROM submissions s WHERE s.set_id=$1`, [fixedSet.setId]);
+  assert.deepEqual(rejectedState.rows[0], { state: "PREPARED", grades: 0, originals: 1 });
+  const fixedEvaluations = evaluations.map(item => ({ ...item, semanticAnalysis: {
+    ...item.semanticAnalysis, elements: [...item.semanticAnalysis.elements,
+      { category: "CONCLUSION", criterion: "결론", modelExcerpt: "결론", status: "MISSING",
+        explanation: "원답에 결론 없음" }] } }));
+  const fixedCommitted = await execute("commitCivilP2Grade", { setId: fixedSet.setId,
+    evaluations: fixedEvaluations }, fixedContext);
+  assert.deepEqual(fixedCommitted.summaries.map(item => item.awardedPoints), [7.5, 0]);
+  assert.equal((await execute("commitCivilP2Grade", { setId: fixedSet.setId,
+    evaluations: fixedEvaluations }, fixedContext)).replayed, true);
+  const fixedStored = await pool.query(`SELECT g.evaluation_payload FROM p2_grades g
+    JOIN submissions s ON s.submission_id=g.submission_id WHERE s.set_id=$1`, [fixedSet.setId]);
+  assert.ok(fixedStored.rows.every(item => item.evaluation_payload.semanticAudit.fixedCriteria.criteriaDigest === fixedCriteriaManifest.criteriaDigest));
   process.stdout.write(JSON.stringify({ ok: true, p1Issued: 2, p1Correct: 2,
     p2CaseItems: 2, p2LearningScores: [15, 0], originalAnswers: 3,
     p2Grades: 2, replayed: true, ownerDenied: true, changedAnswerDenied: true,
     unsubmittedSubquestionHasNoReviewAttempt: true,
     concurrentDifferentRequestsHaveDisjointActiveProblems: true,
+    fixedCriteriaDenominatorEnforced: true, callerManifestIgnored: true,
+    previousKeySnapshotPreserved: true, fixedCriteriaReplayPassed: true,
     syntheticLocalLatency: Object.fromEntries(Object.entries(timings)
       .map(([name, values]) => [name, summary(values)])) }) + "\n");
 } finally {
