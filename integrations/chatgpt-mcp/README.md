@@ -1,5 +1,7 @@
 # 공식 민법 1차·2차 MCP
 
+Optional source release control: `P2_GRADE_REQUIRE_FIXED_CRITERIA=true` requires every newly committed P2 item to carry a fixed manifest, decision rubric and source-only review approval in its exact encrypted grading-key snapshot. The server verifies criteria, decision and review digests and the issued problem version/digest. Missing or changed approval data rejects the transaction. Caller-supplied approval data is never used. Existing COMMITTED submissions with the same evaluation digest remain replayable; PREPARED legacy submissions are rejected in this mode. Omitting this option preserves legacy fixture compatibility. This setting does not open `P2_GRADE_COMMIT_ENABLED`, bypass the optional set allowlist or ownership checks, publish sources, or change deployment configuration. Review evidence establishes provenance, not a guarantee of legal correctness.
+
 WorkOS 인증 후 사용자에게 보이는 도구는 공식 문제 출제·채점 5개(`issueCivilP1`, `gradeCivilP1`, `issueCivilP2`, `prepareCivilP2Grade`, `commitCivilP2Grade`)와 시험 진행 조회 `getCivilExamProgress`다. 개념 강의·진도·회상 도구는 이 서버에 등록하지 않는다.
 
 1차 기본 10문항, 요청 시 1~40문항. 1·2차 모두 범위·취약·특정 안정키 지정 출제를 PostgreSQL에서 처리한다. 2차 지정 소문항은 사례 전체로 확장한다. 기존 Sheets의 사용자 선택권을 유지하되 과거 내부 시드·정렬·할당량은 재현하지 않는다.

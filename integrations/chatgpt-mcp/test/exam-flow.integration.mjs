@@ -7,6 +7,7 @@ import pg from "pg";
 
 import { createPostgresExecutor, gradingAad } from "../db/postgres-adapter.mjs";
 import { createP2CriteriaManifest } from "../db/p2-fixed-criteria.mjs";
+import { p2PublicationDigest } from "../db/publish-p2-fixed-criteria.mjs";
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("TEST_DATABASE_URL required");
@@ -94,6 +95,10 @@ try {
     P2_GRADE_COMMIT_ENABLED: "true",
   } });
   const context = { ownerId };
+  const strictExecute = createPostgresExecutor({ pool, env: {
+    GRADING_KEY_BASE64: encryptionKey.toString("base64"), GRADING_ENCRYPTION_KEY_ID: keyId,
+    P2_GRADE_COMMIT_ENABLED: "true", P2_GRADE_REQUIRE_FIXED_CRITERIA: "true",
+  } });
   const p1 = await execute("issueCivilP1", { requestId: "synthetic-p1-1", mode: "문제지정",
     count: 2, specificKeys: p1Keys }, context);
   assert.equal(p1.count, 2);
@@ -125,7 +130,12 @@ try {
   { key: p2Keys[1], maxPoints: 15, scores: scores(0),
     errorType: "none", checkType: "synthetic", nextReview: "none",
     semanticAnalysis: semantic("", "MISSING") }];
+  await assert.rejects(strictExecute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context),
+    /fixed criteria manifest required/);
+  const legacyPending = await pool.query("SELECT state FROM submissions WHERE set_id=$1", [p2.setId]);
+  assert.equal(legacyPending.rows[0].state, "PREPARED");
   const committed = await execute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context);
+  assert.equal((await strictExecute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context)).replayed, true);
   assert.deepEqual(committed.summaries.map((item) => item.awardedPoints), [15, 0]);
   assert.equal((await execute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context)).replayed, true);
   await assert.rejects(execute("commitCivilP2Grade", { setId: p2.setId,
@@ -193,8 +203,23 @@ try {
     errorCondition: "Contradiction", missingCondition: "Absent" })),
     decompositionRationale: "Synthetic independent criteria", changesFromPrevious: "", unresolvedAmbiguities: [] };
   for (const stableKey of p2Keys) {
+    const binding = await pool.query(`SELECT v.version_id,v.prompt_digest,k.payload_digest
+      FROM problems p JOIN problem_versions v ON v.version_id=p.current_problem_version_id
+      JOIN private_grading_keys k ON k.subject_id=p.subject_id AND k.stable_key=p.stable_key
+      WHERE p.stable_key=$1 AND k.key_version='v1'`, [stableKey]);
+    const fixedCriteriaReviewEvidence = { sourceOnly: true, learnerAnswersProvidedToRubricReview: false,
+      duplicateGroups: 0, unsupportedElements: 0, requiresRevision: false,
+      criteriaFile: "synthetic", criteriaFileDigest: digest("criteria"),
+      auditFile: "synthetic", auditFileDigest: digest("audit") };
+    const fixedCriteriaApproval = { reviewId: "synthetic", reviewerId: "synthetic-agent",
+      reviewedAt: "2026-01-01T00:00:00Z", originalKeyVersion: "v1", originalEncryptionKeyId: keyId,
+      originalPayloadDigest: binding.rows[0].payload_digest, problemVersionId: binding.rows[0].version_id,
+      problemDigest: binding.rows[0].prompt_digest, criteriaDigest: fixedCriteriaManifest.criteriaDigest,
+      decisionRubricDigest: p2PublicationDigest(fixedDecisionRubric),
+      reviewEvidenceDigest: p2PublicationDigest(fixedCriteriaReviewEvidence) };
     const { encrypted, payloadDigest } = encryptedKey(stableKey,
-      { ...fixedSource, fixedCriteriaManifest, fixedDecisionRubric }, "v2-fixed");
+      { ...fixedSource, fixedCriteriaManifest, fixedDecisionRubric, fixedCriteriaReviewEvidence,
+        fixedCriteriaApproval }, "v2-fixed");
     await pool.query(`UPDATE private_grading_keys SET active_for_grading=false
       WHERE subject_id='CIVIL' AND stable_key=$1`, [stableKey]);
     await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
@@ -230,7 +255,7 @@ try {
     ...item.semanticAnalysis, elements: [...item.semanticAnalysis.elements,
       { category: "CONCLUSION", criterion: "결론", modelExcerpt: "결론", status: "MISSING",
         explanation: "원답에 결론 없음" }] } }));
-  const fixedCommitted = await execute("commitCivilP2Grade", { setId: fixedSet.setId,
+  const fixedCommitted = await strictExecute("commitCivilP2Grade", { setId: fixedSet.setId,
     evaluations: fixedEvaluations }, fixedContext);
   assert.deepEqual(fixedCommitted.summaries.map(item => item.awardedPoints), [7.5, 0]);
   assert.equal((await execute("commitCivilP2Grade", { setId: fixedSet.setId,
@@ -243,6 +268,7 @@ try {
     p2Grades: 2, replayed: true, ownerDenied: true, changedAnswerDenied: true,
     unsubmittedSubquestionHasNoReviewAttempt: true,
     concurrentDifferentRequestsHaveDisjointActiveProblems: true,
+    strictFixedCriteriaCommitPassed: true, strictLegacyPendingRejected: true, strictLegacyReplayPreserved: true,
     fixedCriteriaDenominatorEnforced: true, callerManifestIgnored: true,
     previousKeySnapshotPreserved: true, fixedCriteriaReplayPassed: true, fixedDecisionRulesReturned: true,
     syntheticLocalLatency: Object.fromEntries(Object.entries(timings)

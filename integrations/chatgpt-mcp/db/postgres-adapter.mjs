@@ -5,7 +5,7 @@ import { getExamProgress } from "./exam-progress.mjs";
 import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "./p2-semantic-evaluation.mjs";
 import { selectExamCandidates } from "./fast-exam-selection.mjs";
 import { normalizeP2Submission } from "./p2-submission-contract.mjs";
-import { validateP2FixedCriteria, validateP2DecisionRubric } from "./p2-fixed-criteria.mjs";
+import { validateP2FixedCriteria, validateP2DecisionRubric, validateP2ApprovedSource } from "./p2-fixed-criteria.mjs";
 import { withDriveSourceHealth } from "./drive-source-health.mjs";
 
 const SUBJECT = "CIVIL";
@@ -86,7 +86,8 @@ async function ownedSet(client, setId, ownerId, stage) {
 
 async function setItems(client, setId) {
   const result = await client.query(
-    `SELECT i.position, i.stable_key, i.key_version AS grading_key_version,
+      `SELECT i.position, i.stable_key, i.problem_version_id, v.prompt_digest AS problem_prompt_digest,
+              i.key_version AS grading_key_version,
             i.encryption_key_id AS grading_encryption_key_id,
             COALESCE(v.prompt_text,p.prompt_text) AS prompt_text,
             COALESCE(v.max_points,p.max_points) AS max_points,
@@ -288,7 +289,7 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
   } finally { client.release(); }
 }
 
-async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
+async function commitP2(pool, ownerId, input, encryptionKey, keyId, requireFixedCriteria = false) {
   const evaluations = [...input.evaluations].sort((a, b) => a.key.localeCompare(b.key));
   const gradeDigest = digest(evaluations);
   return inTransaction(pool, async (client) => {
@@ -344,6 +345,9 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId) {
       const keyRow = keys.get(item.stable_key);
       const gradingSource = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
         gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
+      if (requireFixedCriteria) validateP2ApprovedSource(gradingSource, {
+        problemVersionId: item.problem_version_id, problemDigest: item.problem_prompt_digest,
+      });
       // Trust only the manifest inside the exact encrypted grading-key snapshot.
       // Legacy keys remain compatible; the global P2 acceptance gate is unchanged.
       const fixedCriteria = Object.hasOwn(gradingSource, "fixedCriteriaManifest")
@@ -448,7 +452,8 @@ export function createPostgresExecutor(options = {}) {
           throw new Error("P2 grade commit set is not allowed for acceptance");
         }
       }
-      return commitP2(pool, ownerId, payload, gradingKey(env), keyId());
+      return commitP2(pool, ownerId, payload, gradingKey(env), keyId(),
+        env.P2_GRADE_REQUIRE_FIXED_CRITERIA === "true");
     }
     throw new Error(`unsupported PostgreSQL tool: ${name}`);
   };

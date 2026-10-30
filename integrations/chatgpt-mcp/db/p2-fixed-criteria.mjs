@@ -77,3 +77,40 @@ export function validateP2DecisionRubric(rubric, manifest, officialSource) {
     unresolvedAmbiguities: boundedRuleList(rubric.unresolvedAmbiguities),
   };
 }
+
+// Publication evidence is loaded only from the authenticated encrypted key snapshot.
+// This verifies its binding; it does not certify the legal correctness of a review.
+export function validateP2ApprovedSource(payload, snapshot) {
+  const source = { modelAnswer: payload.answer, rubric: payload.rubric };
+  const manifest = payload.fixedCriteriaManifest;
+  validateP2FixedCriteria(manifest, { elements: manifest?.requiredElements }, source);
+  const decision = validateP2DecisionRubric(payload.fixedDecisionRubric, manifest, source);
+  if (decision.unresolvedAmbiguities.length !== 0) {
+    throw new Error("fixed decision rubric has unresolved ambiguities");
+  }
+  const review = payload.fixedCriteriaReviewEvidence;
+  const approval = payload.fixedCriteriaApproval;
+  const stable = value => Array.isArray(value) ? value.map(stable)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
+  const digest = value => hash(JSON.stringify(stable(value)));
+  const nonempty = value => typeof value === "string" && value.trim().length > 0;
+  const hex = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  if (review?.sourceOnly !== true || review.learnerAnswersProvidedToRubricReview !== false ||
+      review.duplicateGroups !== 0 || review.unsupportedElements !== 0 || review.requiresRevision !== false ||
+      !nonempty(review.criteriaFile) || !hex(review.criteriaFileDigest) ||
+      !nonempty(review.auditFile) || !hex(review.auditFileDigest)) {
+    throw new Error("approved source-only review required");
+  }
+  if (!approval || !nonempty(approval.reviewId) || !nonempty(approval.reviewerId) ||
+      !nonempty(approval.reviewedAt) || !Number.isFinite(Date.parse(approval.reviewedAt)) ||
+      !nonempty(approval.originalKeyVersion) || !nonempty(approval.originalEncryptionKeyId) ||
+      !hex(approval.originalPayloadDigest) ||
+      !nonempty(snapshot?.problemVersionId) || !hex(snapshot?.problemDigest) ||
+      approval.problemVersionId !== snapshot.problemVersionId || approval.problemDigest !== snapshot.problemDigest ||
+      approval.criteriaDigest !== manifest.criteriaDigest ||
+      approval.decisionRubricDigest !== digest(decision) || approval.reviewEvidenceDigest !== digest(review)) {
+    throw new Error("fixed criteria approval snapshot binding mismatch");
+  }
+  return { criteriaDigest: manifest.criteriaDigest, problemVersionId: snapshot.problemVersionId };
+}
