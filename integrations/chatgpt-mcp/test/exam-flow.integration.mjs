@@ -8,6 +8,7 @@ import pg from "pg";
 import { createPostgresExecutor, gradingAad } from "../db/postgres-adapter.mjs";
 import { createP2CriteriaManifest } from "../db/p2-fixed-criteria.mjs";
 import { p2PublicationDigest } from "../db/publish-p2-fixed-criteria.mjs";
+import { p2ScoreBasisDigest } from "../db/p2-score-basis.mjs";
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("TEST_DATABASE_URL required");
@@ -263,6 +264,56 @@ try {
   const fixedStored = await pool.query(`SELECT g.evaluation_payload FROM p2_grades g
     JOIN submissions s ON s.submission_id=g.submission_id WHERE s.set_id=$1`, [fixedSet.setId]);
   assert.ok(fixedStored.rows.every(item => item.evaluation_payload.semanticAudit.fixedCriteria.criteriaDigest === fixedCriteriaManifest.criteriaDigest));
+  // New learning allocation versions must not rewrite historical maxima or grades.
+  for (const stableKey of p2Keys) {
+    const current = (await pool.query("SELECT prompt_text FROM problems WHERE stable_key=$1",[stableKey])).rows[0];
+    const version = { version_id: crypto.randomUUID(), prompt_digest: digest(current.prompt_text) };
+    const basis = { schemaVersion: 1, mode: "allocated_learning", approvalStatus: "approved",
+      approvalId: "synthetic-source-approval", allocationApprovalId: "synthetic-user-approval",
+      allocationPolicy: "synthetic-equal-halves", sourceGroupKey: "synthetic-score-group",
+      originalGroupMaximum: 15, allocatedLearningMaximum: 7.5, problemVersionId: version.version_id,
+      promptDigest: version.prompt_digest, evidenceDigest: digest("synthetic-public-source") };
+    await pool.query(`INSERT INTO problem_versions(version_id,subject_id,stable_key,
+      source_document_id,source_revision_id,source_version,stage,source_order,prompt_text,max_points,prompt_digest,selection_metadata)
+      SELECT $2,subject_id,stable_key,'synthetic-doc','r1','v3-allocation',stage,source_order,
+        prompt_text,7.5,$3,$4::jsonb FROM problems WHERE stable_key=$1`,
+      [stableKey,version.version_id,version.prompt_digest,JSON.stringify({scoreBasis:basis})]);
+    await pool.query(`UPDATE problems SET max_points=7.5,current_problem_version_id=$2,
+      selection_metadata=$3::jsonb WHERE stable_key=$1`, [stableKey, version.version_id, JSON.stringify({ scoreBasis: basis })]);
+    const sealed = encryptedKey(stableKey, { answer: "요건을 충족한다.", rubric: "요건과 결론을 확인한다.",
+      scoreBasisApproval: { problemVersionId: version.version_id, promptDigest: version.prompt_digest,
+        evidenceDigest: basis.evidenceDigest, scoreBasisDigest: p2ScoreBasisDigest(basis) } }, "v3-allocation");
+    await pool.query("UPDATE private_grading_keys SET active_for_grading=false WHERE stable_key=$1", [stableKey]);
+    await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
+      encrypted_payload,payload_digest,encryption_key_id,verification_state,active_for_grading)
+      VALUES('CIVIL',$1,'v3-allocation',$2,$3,$4,'verified',true)`, [stableKey,sealed.encrypted,sealed.payloadDigest,keyId]);
+  }
+  const allocatedContext = { ownerId: "synthetic-allocated" };
+  const allocatedSet = await execute("issueCivilP2", { requestId: "allocation",
+    mode: "문제지정", specificKeys: [p2Keys[0]] }, allocatedContext);
+  assert.ok(allocatedSet.questions.every(q => q.maxPoints === 7.5 && q.scoreBasis.learningMaximum === 7.5 && !Object.hasOwn(q.scoreBasis,"officialMaximum")));
+  const allocatedPrepared = await execute("prepareCivilP2Grade", { setId: allocatedSet.setId, answers }, allocatedContext);
+  assert.ok(allocatedPrepared.rubrics.every(q => q.scoreBasis.originalGroupMaximum === 15));
+  const allocatedEvaluations = evaluations.map(e => ({ ...e, maxPoints: 7.5 }));
+  // Immutable metadata and caller maxima both reject tampering in the real database.
+  await assert.rejects(pool.query(`UPDATE problem_versions SET selection_metadata=jsonb_set(selection_metadata,
+    '{scoreBasis,allocationPolicy}','"unapproved"') WHERE version_id IN
+    (SELECT problem_version_id FROM issue_set_items WHERE set_id=$1)`, [allocatedSet.setId]), /append-only/);
+  await assert.rejects(execute("commitCivilP2Grade", { setId: allocatedSet.setId,
+    evaluations: allocatedEvaluations.map(e=>({...e,maxPoints:15})) }, allocatedContext), /maxPoints mismatch/);
+  assert.equal((await pool.query(`SELECT count(*)::int AS n FROM p2_grades g JOIN submissions s
+    ON s.submission_id=g.submission_id WHERE s.set_id=$1`,[allocatedSet.setId])).rows[0].n,0);
+  const allocatedGrade = await execute("commitCivilP2Grade", { setId: allocatedSet.setId,
+    evaluations: allocatedEvaluations }, allocatedContext);
+  assert.deepEqual(allocatedGrade.summaries.map(g => g.awardedPoints), [7.5,0]);
+  assert.equal((await execute("commitCivilP2Grade", { setId: allocatedSet.setId,
+    evaluations: allocatedEvaluations }, allocatedContext)).replayed,true);
+  const allocatedStored = await pool.query(`SELECT g.evaluation_payload FROM p2_grades g JOIN submissions s
+    ON s.submission_id=g.submission_id WHERE s.set_id=$1`,[allocatedSet.setId]);
+  assert.ok(allocatedStored.rows.every(r=>r.evaluation_payload.aiScore.learningMaximum===7.5 &&
+    !Object.hasOwn(r.evaluation_payload.aiScore,"officialMaximum")));
+  const preserved = await execute("commitCivilP2Grade", { setId: oldSet.setId, evaluations }, oldContext);
+  assert.deepEqual(preserved.summaries.map(g=>[g.maxPoints,g.awardedPoints]),[[15,15],[15,0]]);
   process.stdout.write(JSON.stringify({ ok: true, p1Issued: 2, p1Correct: 2,
     p2CaseItems: 2, p2LearningScores: [15, 0], originalAnswers: 3,
     p2Grades: 2, replayed: true, ownerDenied: true, changedAnswerDenied: true,
@@ -270,6 +321,8 @@ try {
     concurrentDifferentRequestsHaveDisjointActiveProblems: true,
     strictFixedCriteriaCommitPassed: true, strictLegacyPendingRejected: true, strictLegacyReplayPreserved: true,
     fixedCriteriaDenominatorEnforced: true, callerManifestIgnored: true,
+    allocatedScoreIssuePrepareCommitReplay: true, allocatedTamperRejectedWithoutGrade: true,
+    allocatedOfficialMaximumAbsent: true, historicalScoreMaximumPreserved: true,
     previousKeySnapshotPreserved: true, fixedCriteriaReplayPassed: true, fixedDecisionRulesReturned: true,
     syntheticLocalLatency: Object.fromEntries(Object.entries(timings)
       .map(([name, values]) => [name, summary(values)])) }) + "\n");

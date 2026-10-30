@@ -7,6 +7,7 @@ import { selectExamCandidates } from "./fast-exam-selection.mjs";
 import { normalizeP2Submission } from "./p2-submission-contract.mjs";
 import { validateP2FixedCriteria, validateP2DecisionRubric, validateP2ApprovedSource } from "./p2-fixed-criteria.mjs";
 import { withDriveSourceHealth } from "./drive-source-health.mjs";
+import { publicP2ScoreBasis, approvedP2ScoreBasis, withP2ScoreBasis } from "./p2-score-basis.mjs";
 
 const SUBJECT = "CIVIL";
 const P2_SCORE_FIELDS = ["issue", "outline", "law", "precedent", "application", "conclusion", "expression"];
@@ -148,7 +149,9 @@ async function issue(pool, ownerId, stage, input, configuredKeyId) {
 }
 
 function publicProblem(row, index) {
+  const scoreBasis = row.max_points == null ? null : publicP2ScoreBasis(row);
   return { position: row.position ?? index + 1, key: row.stable_key, prompt: row.prompt_text,
+    ...(scoreBasis ? { scoreBasis } : {}),
     ...(row.max_points == null ? {} : { maxPoints: Number(row.max_points) }) };
 }
 
@@ -272,6 +275,7 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
         const keyRow = keys.get(item.stable_key);
         const payload = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
           gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
+        const scoreBasis = approvedP2ScoreBasis(item, payload);
         if (Object.hasOwn(payload, "fixedCriteriaManifest")) {
           validateP2FixedCriteria(payload.fixedCriteriaManifest,
             { elements: payload.fixedCriteriaManifest?.requiredElements },
@@ -281,6 +285,7 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
           ? validateP2DecisionRubric(payload.fixedDecisionRubric, payload.fixedCriteriaManifest,
             { modelAnswer: payload.answer, rubric: payload.rubric }) : undefined;
         return { key: item.stable_key, maxPoints: Number(item.max_points), modelAnswer: payload.answer,
+          ...(scoreBasis ? { scoreBasis } : {}),
           rubric: payload.rubric, rationale: payload.rationale, source: payload.source,
           ...(Object.hasOwn(payload, "fixedCriteriaManifest")
             ? { fixedCriteriaManifest: payload.fixedCriteriaManifest } : {}),
@@ -345,6 +350,7 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId, requireFixed
       const keyRow = keys.get(item.stable_key);
       const gradingSource = decryptGradingPayload(keyRow.encrypted_payload, encryptionKey,
         gradingAad(SUBJECT, item.stable_key, keyRow.key_version, keyRow.encryption_key_id), keyRow.payload_digest);
+      const scoreBasis = approvedP2ScoreBasis(item, gradingSource);
       if (requireFixedCriteria) validateP2ApprovedSource(gradingSource, {
         problemVersionId: item.problem_version_id, problemDigest: item.problem_prompt_digest,
       });
@@ -358,11 +364,16 @@ async function commitP2(pool, ownerId, input, encryptionKey, keyId, requireFixed
         originalAnswer: originalsByKey.get(item.stable_key), maxPoints: Number(item.max_points),
         awardedPoints: evaluation.awardedPoints, submissionStatus });
       if (fixedCriteria) semanticAudit.fixedCriteria = fixedCriteria;
+      semanticAudit.learningScore = withP2ScoreBasis(semanticAudit.learningScore, scoreBasis);
       const awardedPoints = semanticAudit.learningScore.displayedPoints;
       const payload = { correction: evaluation.correction || "", missingOutline: evaluation.missingOutline || "",
         wrongLaw: evaluation.wrongLaw || "", applicationFix: evaluation.applicationFix || "",
         modelDifference: evaluation.modelDifference || "", nextReview: evaluation.nextReview,
-        semanticAudit, aiScore: { awardedPoints, officialMaximum: Number(item.max_points),
+        semanticAudit, aiScore: { awardedPoints,
+          ...(scoreBasis ? { learningMaximum: scoreBasis.learningMaximum,
+            originalGroupMaximum: scoreBasis.originalGroupMaximum, scoreBasis,
+            ...(scoreBasis.mode === "official_subquestion" ? { officialMaximum: scoreBasis.officialMaximum } : {}) }
+            : { officialMaximum: Number(item.max_points) }),
           label: semanticAudit.learningScore.label, rawPoints: semanticAudit.learningScore.rawPoints,
           rawFraction: semanticAudit.learningScore.rawFraction,
           rationale: semanticAudit.learningScore.calculationRationale },

@@ -73,3 +73,33 @@ export function validateP2ScoreGroup(entries, expectedGroup) {
     originalGroupMaximum: maximum / 100, learningMaximum: sum / 100,
     itemCount: entries.length });
 }
+
+export function publicP2ScoreBasis(item) {
+  const basis = item.selection_metadata?.scoreBasis;
+  if (!basis) return null;
+  // Public presentation only. Approval is authenticated separately after submission.
+  const score = validateP2ScoreBasis(basis, { problemVersionId: item.problem_version_id,
+    promptDigest: createHash("sha256").update(item.prompt_text).digest("hex"),
+    evidenceDigest: basis.evidenceDigest, scoreBasisDigest: p2ScoreBasisDigest(basis) });
+  if (score.learningMaximum !== Number(item.max_points)) fail();
+  return score;
+}
+
+export function approvedP2ScoreBasis(item, gradingSource) {
+  const basis = item.selection_metadata?.scoreBasis;
+  const approval = gradingSource.scoreBasisApproval;
+  if (!basis && !approval) return null; // Immutable historical versions.
+  if (!basis || !approval || approval.problemVersionId !== item.problem_version_id ||
+      approval.promptDigest !== item.problem_prompt_digest) fail();
+  const score = validateP2ScoreBasis(basis, approval);
+  if (score.learningMaximum !== Number(item.max_points)) fail();
+  return score;
+}
+
+export function withP2ScoreBasis(learningScore, scoreBasis) {
+  if (!scoreBasis) return learningScore;
+  return { ...learningScore, scoreBasis, label: scoreBasis.label,
+    ...(scoreBasis.mode === "allocated_learning" ? {
+      formula: "allocated learning maximum × (MATCH + ALTERNATIVE_ACCEPTED + 0.5 × PARTIAL) / required elements",
+    } : {}) };
+}
