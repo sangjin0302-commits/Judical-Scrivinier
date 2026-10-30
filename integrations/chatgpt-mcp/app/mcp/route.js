@@ -1,7 +1,7 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { z } from "zod";
 
-import { authConfig, createWorkOSVerifier } from "../../auth.mjs";
+import { authConfig, authEnvForRequest, createWorkOSVerifier } from "../../auth.mjs";
 import { callTool } from "../../server.mjs";
 
 export const dynamic = "force-dynamic";
@@ -164,10 +164,11 @@ const baseHandler = createMcpHandler(
 );
 
 let handler;
-function getHandler() {
+function getHandler(request) {
   if (!handler) {
-    const config = authConfig();
-    handler = withMcpAuth(baseHandler, createWorkOSVerifier(), {
+    const env = authEnvForRequest(request.url);
+    const config = authConfig(env);
+    handler = withMcpAuth(baseHandler, createWorkOSVerifier(env), {
       required: true,
       requiredScopes: config.requiredScopes,
       resourceMetadataPath: "/.well-known/oauth-protected-resource",
@@ -179,5 +180,5 @@ function getHandler() {
   return handler;
 }
 
-export function GET(request, context) { return getHandler()(request, context); }
-export function POST(request, context) { return getHandler()(request, context); }
+export function GET(request, context) { return getHandler(request)(request, context); }
+export function POST(request, context) { return getHandler(request)(request, context); }

@@ -13,6 +13,15 @@ function normalizedUrl(value) {
 const PR5_ACCEPTANCE_BRANCH = "integration/civil-exam-only";
 const PR5_ACCEPTANCE_HOST = "civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app";
 
+export function authEnvForRequest(requestUrl, env = process.env) {
+  if (String(env.MCP_RESOURCE_URL || "").trim()) return env;
+  const url = new URL(requestUrl);
+  if (url.protocol === "https:" && url.hostname === PR5_ACCEPTANCE_HOST) {
+    return { ...env, MCP_RESOURCE_URL: `https://${PR5_ACCEPTANCE_HOST}/mcp` };
+  }
+  return env;
+}
+
 function resourceUrl(env) {
   if (String(env.MCP_RESOURCE_URL || "").trim()) return requiredEnv("MCP_RESOURCE_URL", env);
   if (

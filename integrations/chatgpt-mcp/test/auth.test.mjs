@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-import { authConfig } from "../auth.mjs";
+import { authConfig, authEnvForRequest } from "../auth.mjs";
 
 test("auth config requires a bounded resource and explicit user allowlist", () => {
   const config = authConfig({
@@ -47,6 +47,18 @@ test("PR5 acceptance Preview derives only its registered WorkOS resource", () =>
   ]) {
     assert.throws(() => authConfig({ ...preview, ...change }), /MCP_RESOURCE_URL/);
   }
+});
+
+test("PR5 request host supplies its resource without changing other hosts", () => {
+  const env = {
+    WORKOS_AUTHKIT_DOMAIN: "https://civil-test.authkit.app",
+    ALLOWED_WORKOS_USER_IDS: "user_1",
+  };
+  const pr5 = "https://civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app/mcp";
+  assert.equal(authConfig(authEnvForRequest(pr5, env)).resource, pr5);
+  assert.throws(() => authConfig(authEnvForRequest("https://civil-p1-mcp-test.vercel.app/mcp", env)), /MCP_RESOURCE_URL/);
+  assert.throws(() => authConfig(authEnvForRequest("http://civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app/mcp", env)), /MCP_RESOURCE_URL/);
+  assert.equal(env.MCP_RESOURCE_URL, undefined);
 });
 
 test("desktop OAuth consent uses PKCE and permits existing client ID without a local secret", async () => {
