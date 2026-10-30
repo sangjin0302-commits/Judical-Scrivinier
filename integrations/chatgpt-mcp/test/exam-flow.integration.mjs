@@ -187,9 +187,14 @@ try {
     { category: "ELEMENT", criterion: "요건", modelExcerpt: "요건" },
     { category: "CONCLUSION", criterion: "결론", modelExcerpt: "결론" },
   ], { modelAnswer: fixedSource.answer, rubric: fixedSource.rubric });
+  const fixedDecisionRubric = { elements: fixedCriteriaManifest.requiredElements.map(element => ({ ...element,
+    explanation: "Synthetic criterion", requiredPropositions: [element.criterion],
+    matchCondition: "Full synthetic meaning", partialCondition: "Partial synthetic meaning",
+    errorCondition: "Contradiction", missingCondition: "Absent" })),
+    decompositionRationale: "Synthetic independent criteria", changesFromPrevious: "", unresolvedAmbiguities: [] };
   for (const stableKey of p2Keys) {
     const { encrypted, payloadDigest } = encryptedKey(stableKey,
-      { ...fixedSource, fixedCriteriaManifest }, "v2-fixed");
+      { ...fixedSource, fixedCriteriaManifest, fixedDecisionRubric }, "v2-fixed");
     await pool.query(`UPDATE private_grading_keys SET active_for_grading=false
       WHERE subject_id='CIVIL' AND stable_key=$1`, [stableKey]);
     await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
@@ -209,6 +214,7 @@ try {
     mode: "문제지정", specificKeys: [p2Keys[0]] }, fixedContext);
   const fixedPrepared = await execute("prepareCivilP2Grade", { setId: fixedSet.setId, answers }, fixedContext);
   assert.ok(fixedPrepared.rubrics.every(item => item.fixedCriteriaManifest.criteriaDigest === fixedCriteriaManifest.criteriaDigest));
+  assert.ok(fixedPrepared.rubrics.every(item => JSON.stringify(item.fixedDecisionRubric) === JSON.stringify(fixedDecisionRubric)));
   // A caller-supplied reduced manifest cannot replace the server's two-element set.
   const forged = evaluations.map(item => ({ ...item, fixedCriteriaManifest:
     createP2CriteriaManifest(item.semanticAnalysis.elements,
@@ -238,7 +244,7 @@ try {
     unsubmittedSubquestionHasNoReviewAttempt: true,
     concurrentDifferentRequestsHaveDisjointActiveProblems: true,
     fixedCriteriaDenominatorEnforced: true, callerManifestIgnored: true,
-    previousKeySnapshotPreserved: true, fixedCriteriaReplayPassed: true,
+    previousKeySnapshotPreserved: true, fixedCriteriaReplayPassed: true, fixedDecisionRulesReturned: true,
     syntheticLocalLatency: Object.fromEntries(Object.entries(timings)
       .map(([name, values]) => [name, summary(values)])) }) + "\n");
 } finally {

@@ -5,7 +5,7 @@ import { getExamProgress } from "./exam-progress.mjs";
 import { buildP2SemanticAudit, isNonSubstantiveP2Answer } from "./p2-semantic-evaluation.mjs";
 import { selectExamCandidates } from "./fast-exam-selection.mjs";
 import { normalizeP2Submission } from "./p2-submission-contract.mjs";
-import { validateP2FixedCriteria } from "./p2-fixed-criteria.mjs";
+import { validateP2FixedCriteria, validateP2DecisionRubric } from "./p2-fixed-criteria.mjs";
 import { withDriveSourceHealth } from "./drive-source-health.mjs";
 
 const SUBJECT = "CIVIL";
@@ -276,10 +276,14 @@ async function prepareP2(pool, ownerId, input, encryptionKey, keyId) {
             { elements: payload.fixedCriteriaManifest?.requiredElements },
             { modelAnswer: payload.answer, rubric: payload.rubric });
         }
+        const fixedDecisionRubric = Object.hasOwn(payload, "fixedDecisionRubric")
+          ? validateP2DecisionRubric(payload.fixedDecisionRubric, payload.fixedCriteriaManifest,
+            { modelAnswer: payload.answer, rubric: payload.rubric }) : undefined;
         return { key: item.stable_key, maxPoints: Number(item.max_points), modelAnswer: payload.answer,
           rubric: payload.rubric, rationale: payload.rationale, source: payload.source,
           ...(Object.hasOwn(payload, "fixedCriteriaManifest")
-            ? { fixedCriteriaManifest: payload.fixedCriteriaManifest } : {}) };
+            ? { fixedCriteriaManifest: payload.fixedCriteriaManifest } : {}),
+          ...(fixedDecisionRubric ? { fixedDecisionRubric } : {}) };
       }) };
   } finally { client.release(); }
 }

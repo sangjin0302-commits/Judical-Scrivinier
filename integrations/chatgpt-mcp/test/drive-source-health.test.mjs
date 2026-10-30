@@ -65,3 +65,31 @@ test("registry failures preserve progress and do not attempt Drive listing", asy
   assert.equal(result.attempted,4);
   assert.doesNotMatch(JSON.stringify(result),/private/);
 });
+
+test("Drive failures expose status and allowlisted reasons, never identifiers or messages", async () => {
+  const result = await withDriveSourceHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"private-token",
+    pool:{query:async()=>({rows:[{folderId:"private-folder-123",stage:"P1"}]})},
+    fetchImpl:async()=>new Response(JSON.stringify({error:{message:"private-folder private-token",
+      errors:[{reason:"insufficientPermissions",message:"private-message"},{reason:"private-unknown-reason"}],
+      details:[{reason:"ACCESS_TOKEN_SCOPE_INSUFFICIENT",metadata:{service:"private-service"}}]}}),{status:403}),
+  });
+  assert.deepEqual(result.sourceHealth.folders,[{stage:"P1",ok:false,code:"FOLDER_LIST_FAILED",
+    httpStatus:403,reasons:["insufficientPermissions","ACCESS_TOKEN_SCOPE_INSUFFICIENT"]}]);
+  assert.doesNotMatch(JSON.stringify(result),/private/);
+});
+
+test("non-JSON Drive error still exposes only status", async () => {
+  const result = await withDriveSourceHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+    pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P2"}]})},
+    fetchImpl:async()=>new Response("private-html-error",{status:503}),
+  });
+  assert.deepEqual(result.sourceHealth.folders,[{stage:"P2",ok:false,code:"FOLDER_LIST_FAILED",httpStatus:503}]);
+});
+
+test("invalid registry folder ID gets a safe specific code without HTTP", async () => {
+  const result = await withDriveSourceHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+    pool:{query:async()=>({rows:[{folderId:"bad",stage:"P1"}]})},
+    fetchImpl:async()=>assert.fail("invalid folder must not reach provider"),
+  });
+  assert.deepEqual(result.sourceHealth.folders,[{stage:"P1",ok:false,code:"FOLDER_ID_INVALID"}]);
+});

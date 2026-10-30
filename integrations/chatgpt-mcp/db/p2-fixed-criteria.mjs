@@ -51,3 +51,29 @@ export function validateP2FixedCriteria(manifest, analysis, source) {
     officialSourceDigest: canonical.officialSourceDigest,
     requiredElementCount: canonical.requiredElements.length };
 }
+
+function boundedRule(value, maximum, empty = false) {
+  if (typeof value !== "string" || (!empty && !value.trim()) || value.length > maximum) {
+    throw new Error("invalid fixed decision rule");
+  }
+  return value;
+}
+function boundedRuleList(value) {
+  if (!Array.isArray(value) || value.length > 30) throw new Error("invalid fixed decision rule list");
+  return value.map(item => boundedRule(item, 2000));
+}
+export function validateP2DecisionRubric(rubric, manifest, officialSource) {
+  validateP2FixedCriteria(manifest, { elements: rubric?.elements }, officialSource);
+  return {
+    elements: rubric.elements.map(element => ({
+      category: boundedRule(element.category, 30), criterion: boundedRule(element.criterion, 500),
+      modelExcerpt: boundedRule(element.modelExcerpt, 2000), explanation: boundedRule(element.explanation, 5000),
+      requiredPropositions: boundedRuleList(element.requiredPropositions),
+      matchCondition: boundedRule(element.matchCondition, 5000), partialCondition: boundedRule(element.partialCondition, 5000),
+      errorCondition: boundedRule(element.errorCondition, 5000), missingCondition: boundedRule(element.missingCondition, 5000),
+    })),
+    decompositionRationale: boundedRule(rubric.decompositionRationale, 5000),
+    changesFromPrevious: boundedRule(rubric.changesFromPrevious, 5000, true),
+    unresolvedAmbiguities: boundedRuleList(rubric.unresolvedAmbiguities),
+  };
+}

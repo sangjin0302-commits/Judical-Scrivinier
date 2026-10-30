@@ -2,6 +2,9 @@ import { googleAccessToken } from "./dry-run-google-docs-sync.mjs";
 import { listFolderDocuments } from "./drive-document-registry.mjs";
 
 const PREVIEW_HOST = "civil-p1-mcp-test-git-integ-e09f5d-sangjin0302-commits-projects.vercel.app";
+const SAFE_DRIVE_REASONS = new Set(["insufficientPermissions", "accessNotConfigured",
+  "SERVICE_DISABLED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "forbidden", "notFound",
+  "rateLimitExceeded", "userRateLimitExceeded"]);
 
 export function driveDiagnosticEnabled(env, ownerId) {
   const admins = String(env.DRIVE_DIAGNOSTIC_ADMIN_USER_IDS || "").split(",")
@@ -35,10 +38,31 @@ export async function withDriveSourceHealth(progress, { pool, ownerId, env = pro
     const counts = [];
     for (const folder of folders) {
       if (controller.signal.aborted) return { ok: false, readOnly: true, code: "TIMEOUT" };
+      let failureMetadata = {};
+      const driveFetch = async (url, options) => {
+        const response = await timedFetch(url, options);
+        if (!response.ok) {
+          if (Number.isInteger(response.status) && response.status >= 100 && response.status <= 599) {
+            failureMetadata.httpStatus = response.status;
+          }
+          try {
+            const payload = await response.clone().json();
+            const error = payload?.error;
+            const candidates = [error?.status,
+              ...(Array.isArray(error?.errors) ? error.errors.map((item) => item?.reason) : []),
+              ...(Array.isArray(error?.details) ? error.details.map((item) => item?.reason) : [])];
+            const reasons = [...new Set(candidates.filter((reason) => SAFE_DRIVE_REASONS.has(reason)))];
+            if (reasons.length) failureMetadata.reasons = reasons;
+          } catch { /* Provider bodies and messages are never returned. */ }
+        }
+        return response;
+      };
       try {
-        const files = await listFiles(folder.folderId, token, timedFetch);
+        const files = await listFiles(folder.folderId, token, driveFetch);
         counts.push({ stage: folder.stage, documentCount: files.length, ok: true });
-      } catch { counts.push({ stage: folder.stage, ok: false, code: "FOLDER_LIST_FAILED" }); }
+      } catch (error) { counts.push({ stage: folder.stage, ok: false,
+        code: error?.message === "invalid folder id" ? "FOLDER_ID_INVALID" : "FOLDER_LIST_FAILED",
+        ...failureMetadata }); }
     }
     return { ok: counts.every((item) => item.ok), readOnly: true, folders: counts };
   };
