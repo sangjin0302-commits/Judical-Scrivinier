@@ -78,13 +78,23 @@ const attempted = (gradeTable) => `EXISTS (
    WHERE g.subject_id=p.subject_id AND g.stable_key=p.stable_key
      AND s.owner_id=$2 AND s.state='COMMITTED'
      ${gradeTable === "p2_grades" ? `AND ${submittedP2}` : ""})`;
-const sourceChanged = `EXISTS (
-  SELECT 1 FROM issue_set_items old_item JOIN issue_sets old_set ON old_set.set_id=old_item.set_id
+// Compare the latest actual committed attempt, not any older historical version.
+// Omitted subquestions and pending submissions must not clear a changed source.
+const sourceChanged = `COALESCE((
+  SELECT old_item.problem_version_id IS DISTINCT FROM p.current_problem_version_id
+  FROM issue_set_items old_item JOIN issue_sets old_set ON old_set.set_id=old_item.set_id
   JOIN submissions old_submission ON old_submission.set_id=old_set.set_id
    WHERE old_item.subject_id=p.subject_id AND old_item.stable_key=p.stable_key
      AND old_set.owner_id=$2 AND old_submission.owner_id=$2
+     AND old_set.subject_id=p.subject_id AND old_submission.subject_id=p.subject_id
+     AND old_set.stage=p.stage
      AND old_submission.state='COMMITTED'
-     AND old_item.problem_version_id IS DISTINCT FROM p.current_problem_version_id)`;
+     AND EXISTS (SELECT 1 FROM original_answers old_answer
+       WHERE old_answer.submission_id=old_submission.submission_id
+         AND old_answer.subject_id=old_item.subject_id AND old_answer.stable_key=old_item.stable_key
+         AND length(btrim(old_answer.answer_text))>0)
+   ORDER BY old_submission.committed_at DESC NULLS LAST,old_submission.created_at DESC,
+     old_submission.submission_id DESC LIMIT 1),false)`;
 const due = `EXISTS (
   SELECT 1 FROM exam_review_due due_item WHERE due_item.subject_id=p.subject_id
     AND due_item.stable_key=p.stable_key AND due_item.owner_id=$2 AND due_item.due_at<=now())`;

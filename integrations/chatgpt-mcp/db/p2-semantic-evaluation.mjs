@@ -19,7 +19,10 @@ function bounded(value, field, limit = 2000) {
 
 function stringList(value, field) {
   if (!Array.isArray(value) || value.length > 30) throw new Error(`invalid ${field}`);
-  return value.map((item) => bounded(item, field, 1000));
+  return value.map((item) => {
+    if (typeof item !== "string") throw new Error(`invalid ${field}`);
+    return bounded(item, field, 1000);
+  });
 }
 
 // Monetary precision is 0.01 point. Retain exact rational calculation and raw value.

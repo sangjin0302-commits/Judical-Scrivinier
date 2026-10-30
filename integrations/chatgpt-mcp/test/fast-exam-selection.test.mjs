@@ -20,6 +20,24 @@ test("P2 history filters exclude grades for unsubmitted subquestions", async () 
   }
 });
 
+test("source change compares the latest owner and stage scoped submitted version", async () => {
+  for (const stage of ["P1", "P2"]) {
+    let statement;
+    const client = { async query(sql) {
+      statement = sql;
+      return { rows: [{ ...problem(1), group_key: "case-A" }], rowCount: 1 };
+    } };
+    await selectExamCandidates(client, { ...base, stage, count: 1, mode: "원문변경" });
+    assert.match(statement, /SELECT old_item.problem_version_id IS DISTINCT FROM p.current_problem_version_id/);
+    assert.match(statement, /old_set.owner_id=\$2 AND old_submission.owner_id=\$2/);
+    assert.match(statement, /old_set.stage=p.stage/);
+    assert.match(statement, /old_submission.subject_id=p.subject_id/);
+    assert.match(statement, /old_submission.state='COMMITTED'/);
+    assert.match(statement, /old_answer.stable_key=old_item.stable_key[\s\S]*length\(btrim\(old_answer.answer_text\)\)>0/);
+    assert.match(statement, /ORDER BY old_submission.committed_at DESC NULLS LAST,old_submission.created_at DESC,\s*old_submission.submission_id DESC LIMIT 1\),false\)/);
+  }
+});
+
 test("P1 selects ten unique key-verified rows in one indexed pivot-wrap statement", async () => {
   const calls = [];
   const client = { async query(sql, params) {

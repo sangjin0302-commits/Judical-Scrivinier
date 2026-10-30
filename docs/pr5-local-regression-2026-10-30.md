@@ -40,3 +40,10 @@ Baseline: 0571f9096fc23fb3012250dd67de14ccc51b6129. No operating data changed.
 
 ## Still unverified
 Broad P2 semantic acceptance beyond the reviewed samples, approved fixed-criteria supply for other keys, Vercel Drive OAuth runtime and production transition remain open. Drive diagnostic code and local tests exist, but no authenticated deployed diagnostic request was sent because the CLI returned empty sensitive Preview values. P2 commit deployment gate is closed again. No merge or production cutover.
+
+## Ratio-policy and readiness follow-up
+- Clarified fixed meaning-element ratio scoring, semantic equivalence, partial-credit boundaries and separate diagnostics. Internal official point partitions are not claimed as supported by the current equal-element calculator.
+- Reject non-string diagnostic entries in the private semantic audit, preventing an object from passing locally only to fail the MCP schema later.
+- Source-change selection now compares the latest actual committed original rather than any historical version. Re-solving the current version clears the change; omitted, blank, pending and other-owner/stage records do not clear it.
+- `npm test`: 147 passed, zero failed/skipped. `node test/source-changed.readonly.integration.mjs`: 18 assertions passed against disposable localhost PostgreSQL 18, using synthetic CTEs in a read-only transaction. Temporary container removed. `git diff --check`: exit 0.
+- Drive diagnostic remains blocked at caller credential supply: no current process or checked existing local environment provides the maintenance token. WorkOS user authentication is not administrator route authorization. No token was rotated and no configuration or operating data changed during this follow-up.

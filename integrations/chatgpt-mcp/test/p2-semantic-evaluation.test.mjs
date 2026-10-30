@@ -29,6 +29,15 @@ test("P2 audit reports element match separately from official point score", () =
   assert.equal(result.elements[0].modelEvidenceDigest.length, 64);
 });
 
+test("private audit rejects non-string diagnostics before an MCP submission", () => {
+  for (const field of ["matchedLaw", "missingLaw", "misappliedLaw"]) {
+    for (const item of [{ explanation: "synthetic diagnostic" }, 1, null, ["nested"]]) {
+      assert.throws(() => buildP2SemanticAudit({ ...base, [field]: [item] }, source),
+        /invalid (matched|missing|misapplied) law/);
+    }
+  }
+});
+
 test("P2 audit rejects unsupported claims and permits sourced alternative reasoning", () => {
   assert.throws(() => buildP2SemanticAudit({ ...base, elements: [{ ...base.elements[0],
     modelExcerpt: "공식 자료에 없는 법리" }] }, source), /model evidence absent/);
