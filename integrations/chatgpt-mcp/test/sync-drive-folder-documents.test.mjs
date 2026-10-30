@@ -168,6 +168,26 @@ test("failed folder scan suppresses missing-document review", async () => {
   assert.equal(result.missingReview, 0);
 });
 
+test("missing review excludes retained documents in disabled or unconfigured folders", async () => {
+  class RegistryPool extends FakePool {
+    async query(sql) {
+      if (sql.includes("FROM document_registry")) return { rows: [
+        { documentId: "missing-active", registrationKind: "FOLDER", folderId: "folder-1" },
+        { documentId: "retained-disabled", registrationKind: "FOLDER", folderId: "disabled-folder" },
+        { documentId: "original-external", registrationKind: "EXTERNAL", folderId: null },
+      ] };
+      return super.query(sql);
+    }
+  }
+  const marked = [];
+  const result = await syncDriveFolderDocuments({ env, Pool: RegistryPool,
+    tokenProvider: async () => "token", listFiles: async () => [],
+    markMissing: async (_client, id) => { marked.push(id); return true; },
+  });
+  assert.deepEqual(marked, ["missing-active"]);
+  assert.equal(result.missingReview, 1);
+});
+
 test("same file in two folders is never registered or staged", async () => {
   const result = await syncDriveFolderDocuments({ env, Pool: FakePool,
     tokenProvider: async () => "token",

@@ -3,11 +3,14 @@ const PASS_RATE = .667;
 const DAY = 86400000;
 
 function dateMs(value) {
+  if (value == null || value === "" || typeof value === "boolean") return null;
   const n = new Date(value).getTime();
   return Number.isFinite(n) ? n : null;
 }
 
 function asRate(value) {
+  if (value == null || typeof value === "boolean" ||
+      (typeof value === "string" && !value.trim())) return null;
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
 }
@@ -40,6 +43,7 @@ export function summarizeExamProblem(problem, attempts, { now = new Date() } = {
   // Seven diagnostic values remain separate from official point score.
   let acceptedA = 0;
   let previousA = null;
+  let latestDiagnosticGrade;
   for (const a of sorted) {
     const seven = a.seven;
     if (!Array.isArray(seven) || seven.length !== 7 || seven.some(n => !Number.isInteger(n) || n < 0 || n > 2)) {
@@ -51,14 +55,14 @@ export function summarizeExamProblem(problem, attempts, { now = new Date() } = {
     const rate = asRate(a.rate);
     const grade = structure >= .85 && rate >= PASS_RATE && Math.min(...seven) > 0 ? "A"
       : structure >= .7 && rate >= PASS_RATE ? "B" : structure >= .5 ? "C" : "D";
-    a.computedGrade = grade;
+    latestDiagnosticGrade = grade;
     const at = dateMs(a.at);
     if (grade === "A") {
       if (previousA === null || at - previousA > 3 * DAY) acceptedA++;
       previousA = at;
     }
   }
-  result.latestDiagnosticGrade = sorted.at(-1).computedGrade;
+  result.latestDiagnosticGrade = latestDiagnosticGrade;
   result.acceptedA = acceptedA;
   result.pass = acceptedA >= 2;
   result.graduated = acceptedA >= 3;

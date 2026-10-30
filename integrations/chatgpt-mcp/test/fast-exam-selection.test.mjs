@@ -8,6 +8,18 @@ const problem = (number) => ({ stable_key: `SRC-CIV-004|P${number}`, prompt_text
   source_version: "v1", problem_version_id: `version-${number}`,
   grading_key_version: "v1", grading_encryption_key_id: "key-v2" });
 
+test("P2 history filters exclude grades for unsubmitted subquestions", async () => {
+  const seen = [];
+  const client = { async query(sql) {
+    seen.push(sql);
+    return { rows: [{ ...problem(1), group_key: "case-A" }] };
+  } };
+  for (const mode of ["미풀이", "오답", "취약", "낮은점수"]) {
+    await selectExamCandidates(client, { ...base, stage: "P2", mode, lowScoreBelow: .6 });
+    assert.match(seen.at(-1), /FROM p2_grades g[\s\S]*EXISTS \(SELECT 1 FROM original_answers oa\s+WHERE oa.submission_id=g.submission_id AND oa.subject_id=g.subject_id\s+AND oa.stable_key=g.stable_key AND length\(btrim\(oa.answer_text\)\)>0\)/);
+  }
+});
+
 test("P1 selects ten unique key-verified rows in one indexed pivot-wrap statement", async () => {
   const calls = [];
   const client = { async query(sql, params) {

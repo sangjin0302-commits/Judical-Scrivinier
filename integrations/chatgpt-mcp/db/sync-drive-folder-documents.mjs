@@ -156,9 +156,13 @@ export async function syncDriveFolderDocuments({ env = process.env, fetchImpl = 
     let missingReview = 0;
     if (!folderErrors.length) {
       const registered = (await pool.query(
-        `SELECT document_id AS "documentId",registration_kind AS "registrationKind"
+        `SELECT document_id AS "documentId",registration_kind AS "registrationKind",folder_id AS "folderId"
            FROM document_registry WHERE subject_id='CIVIL'`)).rows;
-      for (const documentId of missingManagedDocuments(registered, discovered, { completeScan: true })) {
+      // A complete scan covers only enabled folders. Disabling a folder must not
+      // turn its retained documents into missing-source review candidates.
+      const scannedFolders = new Set(folders.map((folder) => folder.folderId));
+      const scannedRegistry = registered.filter((item) => scannedFolders.has(item.folderId));
+      for (const documentId of missingManagedDocuments(scannedRegistry, discovered, { completeScan: true })) {
         if (await withClient(pool, (client) => markMissing(client, documentId)))
           missingReview += 1;
       }

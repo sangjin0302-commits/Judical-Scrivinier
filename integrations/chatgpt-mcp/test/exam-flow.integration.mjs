@@ -160,10 +160,27 @@ try {
   const finalDue = await pool.query(`SELECT stable_key FROM exam_review_due
     WHERE owner_id=$1 AND stable_key=ANY($2::text[]) ORDER BY stable_key`, [ownerId, p2Keys]);
   assert.deepEqual(finalDue.rows.map((item) => item.stable_key), [p2Keys[0]]);
+  // Different request IDs for one owner must still serialize active allocation.
+  // The two-connection pool allows both transactions to run concurrently.
+  const concurrentContext = { ownerId: "synthetic-concurrent-owner" };
+  const concurrentInputs = ["concurrent-p1-a", "concurrent-p1-b"].map((requestId) =>
+    ({ requestId, mode: "전범위", count: 1 }));
+  const concurrentSets = await Promise.all(concurrentInputs.map((input) =>
+    execute("issueCivilP1", input, concurrentContext)));
+  assert.equal(concurrentSets.length, 2);
+  assert.notEqual(concurrentSets[0].setId, concurrentSets[1].setId);
+  assert.ok(concurrentSets.every((set) => set.count === 1 && set.questions.length === 1));
+  assert.deepEqual(concurrentSets.flatMap((set) => set.questions.map((item) => item.key)).sort(),
+    [...p1Keys].sort(), "concurrent active sets must contain different problems");
+  const replayedConcurrentSets = await Promise.all(concurrentInputs.map((input) =>
+    execute("issueCivilP1", input, concurrentContext)));
+  assert.deepEqual(replayedConcurrentSets.map((set) => set.setId),
+    concurrentSets.map((set) => set.setId), "concurrent allocation retries retain their sets");
   process.stdout.write(JSON.stringify({ ok: true, p1Issued: 2, p1Correct: 2,
     p2CaseItems: 2, p2LearningScores: [15, 0], originalAnswers: 3,
     p2Grades: 2, replayed: true, ownerDenied: true, changedAnswerDenied: true,
     unsubmittedSubquestionHasNoReviewAttempt: true,
+    concurrentDifferentRequestsHaveDisjointActiveProblems: true,
     syntheticLocalLatency: Object.fromEntries(Object.entries(timings)
       .map(([name, values]) => [name, summary(values)])) }) + "\n");
 } finally {

@@ -58,10 +58,16 @@ const p1LatestWrong = `COALESCE((SELECT NOT g.is_correct
    WHERE g.subject_id=p.subject_id AND g.stable_key=p.stable_key
      AND s.owner_id=$2 AND s.state='COMMITTED'
    ORDER BY s.committed_at DESC NULLS LAST,s.created_at DESC LIMIT 1),false)`;
+// Legacy partial submissions may have zero-point grade rows for omitted items.
+// Only a preserved, nonempty original constitutes an attempted subquestion.
+const submittedP2 = `EXISTS (SELECT 1 FROM original_answers oa
+      WHERE oa.submission_id=g.submission_id AND oa.subject_id=g.subject_id
+        AND oa.stable_key=g.stable_key AND length(btrim(oa.answer_text))>0)`;
 const p2LatestRatio = `(SELECT g.awarded_points/g.max_points
   FROM p2_grades g JOIN submissions s ON s.submission_id=g.submission_id
    WHERE g.subject_id=p.subject_id AND g.stable_key=p.stable_key
      AND s.owner_id=$2 AND s.state='COMMITTED'
+     AND ${submittedP2}
    ORDER BY s.committed_at DESC NULLS LAST,s.created_at DESC LIMIT 1)`;
 const activeSet = `EXISTS (
   SELECT 1 FROM issue_set_items active_item JOIN issue_sets active_set ON active_set.set_id=active_item.set_id
@@ -70,7 +76,8 @@ const activeSet = `EXISTS (
 const attempted = (gradeTable) => `EXISTS (
   SELECT 1 FROM ${gradeTable} g JOIN submissions s ON s.submission_id=g.submission_id
    WHERE g.subject_id=p.subject_id AND g.stable_key=p.stable_key
-     AND s.owner_id=$2 AND s.state='COMMITTED')`;
+     AND s.owner_id=$2 AND s.state='COMMITTED'
+     ${gradeTable === "p2_grades" ? `AND ${submittedP2}` : ""})`;
 const sourceChanged = `EXISTS (
   SELECT 1 FROM issue_set_items old_item JOIN issue_sets old_set ON old_set.set_id=old_item.set_id
   JOIN submissions old_submission ON old_submission.set_id=old_set.set_id

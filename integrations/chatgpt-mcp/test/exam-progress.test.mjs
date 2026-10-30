@@ -6,6 +6,23 @@ const p1 = { stable_key: "p1", stage: "P1" };
 const p2 = { stable_key: "p2", stage: "P2" };
 const a = (id, day, rate, seven) => ({ id, at: `2026-10-${String(day).padStart(2,"0")}T00:00:00.000Z`, rate, seven });
 
+test("missing scores and dates stay unknown rather than becoming zero or epoch", () => {
+  for (const patch of [{ rate: null }, { rate: "" }, { rate: "  " }, { rate: false }, { at: null }, { at: "" }]) {
+    const result = summarizeExamProblem(p1, [{ ...a("a", 1, 1), ...patch }]);
+    assert.equal(result.historyStatus, "ambiguous");
+    assert.equal(result.latestScoreRate, null);
+    assert.equal(result.pass, null);
+    assert.equal(result.reviewDueAt, null);
+  }
+});
+
+test("P2 progress accepts immutable history without modifying attempts", () => {
+  const attempt = Object.freeze(a("a", 1, .8, Object.freeze([2,2,2,2,2,2,2])));
+  const result = summarizeExamProblem(p2, Object.freeze([attempt]));
+  assert.equal(result.latestDiagnosticGrade, "A");
+  assert.equal(Object.hasOwn(attempt, "computedGrade"), false);
+});
+
 test("P1 counts verified attempts, latest pass and 7/21/60 day review", () => {
   assert.equal(summarizeExamProblem(p1, [a("a",1,0)]).reviewDueAt, "2026-10-08T00:00:00.000Z");
   assert.equal(summarizeExamProblem(p1, [a("a",1,0),a("b",2,1)]).reviewDueAt, "2026-10-23T00:00:00.000Z");
