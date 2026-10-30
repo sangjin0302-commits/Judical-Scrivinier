@@ -20,7 +20,7 @@ Baseline: 0571f9096fc23fb3012250dd67de14ccc51b6129. No operating data changed.
 ## Authenticated Preview follow-up
 - Existing WorkOS login completed. The connected runtime now exposes the six Preview tools; authenticated progress, P1 issue/grade and P2 issue/prepare calls succeeded. A separate raw `tools/list` response was not captured.
 - Actual P1 submission was graded and its progress records read back. Repeating issue and grade requests returned replay results without increasing attempts. Private answers, problem keys and user identifiers are intentionally omitted here.
-- Actual P2 originals were saved before protected grading sources were returned. Progress correctly reports pending grades; no P2 score was committed.
+- Actual P2 originals were saved before protected grading sources were returned. They initially remained pending; the bounded acceptance run below subsequently committed and verified them.
 - Commit `edffcdbdf92a38df182f194e202b68af977b8120`: GitHub Actions run `41074861628` succeeded; Vercel reported successful Preview deployment. These checks do not establish semantic grading accuracy or Drive access.
 - Actual repeated model evaluation found classification instability. Source-only fixed criteria improved one tested pair to identical classifications and scores across three runs; evidence excerpts differed. This is limited consistency evidence, not a general accuracy pass.
 - Added a private fixed-criteria validator and separated classification agreement from excerpt agreement. Initial `npm test`: 138 passed, zero failed/skipped.
@@ -31,5 +31,12 @@ Baseline: 0571f9096fc23fb3012250dd67de14ccc51b6129. No operating data changed.
 - The private evaluation runner omitted the issued question context. Those results are invalid as learner scores. Added a required-context input builder with issued prompt digest verification; actual prompt hashes match all three issued snapshots. Re-evaluation remains separate from mechanical test success.
 - `npm test`: 141 passed, zero failed/skipped. `git diff --check`: exit 0. No private prompt, original, model answer or rubric is included in this evidence.
 
+## Bounded authenticated P2 acceptance
+- After correcting context omission and duplicate criteria, all three actual answers were evaluated three times against fixed, independently reviewed criteria. Classifications and points agreed in all nine evaluations; this is evidence for these samples, not universal semantic accuracy.
+- Added `P2_GRADE_COMMIT_ALLOWED_SET_IDS` as an additional exact-set restriction. `npm test`: 143 passed, zero failed/skipped. Commit `2daa8ebb9148255ea03433d8188336efe82a94dc` passed GitHub Actions run `41078846350` and Vercel Preview deployment.
+- Enabled P2 commit temporarily only in the existing test Preview branch, restricted to the reviewed set. The first MCP call failed schema validation because a diagnostic array entry was an object rather than a string; no write occurred. Normalized that diagnostic to its existing explanation string without changing element judgments or points, then the authenticated MCP commit succeeded.
+- Repeating the exact accepted payload returned replay. Progress readback after replay showed one attempt per submitted item, verified history, score rates, mastery and review dates. No original answer or past key was changed.
+- Restored the branch gate to false and redeployed the same test Preview. A real MCP commit probe then returned `P2 grade commit awaits official accuracy acceptance`, confirming closure. No production environment, main merge or operating data was changed.
+
 ## Still unverified
-P2 semantic acceptance and authenticated score commit; Vercel Drive OAuth runtime; production transition. Drive diagnostic code and local tests exist, but no authenticated deployed diagnostic request was sent because the CLI returned empty sensitive Preview values. P2 commit deployment gate remains unchanged. No merge or production cutover.
+Broad P2 semantic acceptance beyond the reviewed samples, approved fixed-criteria supply for other keys, Vercel Drive OAuth runtime and production transition remain open. Drive diagnostic code and local tests exist, but no authenticated deployed diagnostic request was sent because the CLI returned empty sensitive Preview values. P2 commit deployment gate is closed again. No merge or production cutover.
