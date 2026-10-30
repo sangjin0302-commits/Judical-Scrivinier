@@ -10,6 +10,12 @@ Google Docs 대조·증분 미리보기·후보 기록은 `/api/maintenance/veri
 
 Google Drive 다중 문서 등록은 기존 `문제은행/민법/1차`, `문제은행/민법/2차` 폴더에서 `/api/maintenance/sync-drive-folder-documents` POST로 실행한다. 기존 세 Docs는 원래 자료ID의 외부 등록 자료로 유지한다. 신규 문항은 정답키 검증 전 비공개 임시 등록만 하며 기존 내용 수정·중복·이동은 자동 적용하지 않는다. 서버 Google OAuth에는 Docs 읽기와 Drive 메타데이터 읽기 권한이 필요하다. 실제 폴더 검색 권한·새 문서 인수시험은 아직 미검증이다. 자세한 상태: `docs/drive-folder-sync-wip.md`.
 
+### Read-only Drive runtime diagnostic
+
+Send `POST /api/maintenance/sync-drive-folder-documents?dryRun=true` to the PR #5 Preview using its existing, branch-scoped `MAINTENANCE_TOKEN` in the `x-maintenance-token` header. Keep credentials out of shell history and logs. This mode uses the deployed Google OAuth provider, selects enabled folders, and lists Drive metadata; it returns counts without fetching document contents or writing to source documents or the database. Omitting `dryRun=true` uses the existing mutating sync path. Invalid `dryRun` values return 400; authentication remains required.
+
+Runtime acceptance remains **unexecuted**: the official Vercel CLI listed the Preview variables, but `env pull` returned empty sensitive values, including the maintenance token. No authenticated diagnostic request was sent, and no credential was rotated. Local tests cover zero-write/content behavior, sanitized failures, authentication, and invalid-mode rejection; these do not prove deployed Google folder access.
+
 `npm ci`, `npm test`, `npm run build`로 코드 경계를 확인한다. 임시 PostgreSQL 18에서 합성 P1/P2 출제·채점·원답·기록·멱등·소유권·Docs 적용/롤백은 확인했다. 실제 Railway와 ChatGPT 호출은 별도 인수시험이다. 2차 점수는 필수 의미요소 비율 × 최대 배점의 AI 학습평가이며 7요소 진단과 분리한다. 의미 판정 정확성 확인 전 P2 기록 게이트는 닫혀 있다. 기존 PREPARED 원답을 임의로 채점 완료 처리하지 않는다.
 
 기존 개념 DB 테이블과 기록은 삭제하거나 수정하지 않는다. 새 브랜치에서 개념 서비스 코드와 사용자 도구만 제외한다. 운영 Sheets·Docs·Apps Script 쓰기와 운영 DB 전환은 별도 승인 전 금지한다.

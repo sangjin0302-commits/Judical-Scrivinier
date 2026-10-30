@@ -50,6 +50,9 @@ export function compareP2Evaluations({ referenceAnalysis, runs, source } = {}) {
   return { method: "offline-reference-comparison-v1", semanticCorrectnessVerified: false,
     gateMayBeEnabled: false, runCount: runs.length, validRunCount: valid.length,
     invalidRunCount: runs.length - valid.length,
+    classificationsAgreeWithReference: reports.every((r) => r.valid &&
+      r.missingCriteria + r.extraCriteria + r.statusDifferences + r.categoryDifferences === 0),
+    evidenceAgreesWithReference: reports.every((r) => r.valid && r.evidenceDifferences === 0),
     allAgreeWithReference: reports.every((r) => r.valid && r.agreesWithReference),
     referencePoints: reference.learningScore.rawPoints,
     scoreRange: scores.length ? { min: Math.min(...scores), max: Math.max(...scores),

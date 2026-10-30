@@ -54,6 +54,15 @@ test("fabricated excerpts and duplicate criteria fail closed without leaking con
   assert.ok(!JSON.stringify(result).includes("secret"));
 });
 
+test("different valid excerpts are distinguished from classification instability", () => {
+  const second=copy();
+  second.elements[0].answerExcerpt="private-answer-rule private-answer-conclusion";
+  const result=run([copy(),second]);
+  assert.equal(result.classificationsAgreeWithReference,true);
+  assert.equal(result.evidenceAgreesWithReference,false);
+  assert.equal(result.allAgreeWithReference,false);
+});
+
 test("requires multiple runs and valid reference and official maximum", () => {
   assert.throws(() => run([copy()]));
   assert.throws(() => compareP2Evaluations({ source: {}, referenceAnalysis: reference,
