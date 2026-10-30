@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withDriveSourceHealth } from "../db/drive-source-health.mjs";
+import { withDriveSourceHealth as actualHealth } from "../db/drive-source-health.mjs";
+const withDriveSourceHealth = (progress, options) => actualHealth(progress, {
+  checkFolder: async () => ({ mimeType: "application/vnd.google-apps.folder", trashed: false }), ...options,
+});
 
 const env = { DRIVE_DIAGNOSTIC_ENABLED: "true", DRIVE_DIAGNOSTIC_ADMIN_USER_IDS: "admin",
   VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: "integration/civil-exam-only",
@@ -24,7 +27,7 @@ test("explicit Preview admin gets counts only with one read query and no content
       return {rows:[{folderId:"private-folder",stage:"P1"}]}; }},
     listFiles: async (_folder, token) => {assert.equal(token,"private-token"); return [{documentId:"private-doc"}];},
   });
-  assert.deepEqual(sourceHealth, {...progress,sourceHealth:{ok:true,readOnly:true,folders:[{stage:"P1",documentCount:1,ok:true}]}});
+  assert.deepEqual(sourceHealth, {...progress,sourceHealth:{ok:true,readOnly:true,folders:[{stage:"P1",documentCount:1,ok:true,folderVerified:true}]}});
   assert.doesNotMatch(JSON.stringify(sourceHealth),/private/);
   assert.deepEqual(progress,{ok:true,attempted:4});
 });
@@ -52,7 +55,7 @@ test("folder failures stay aggregate and do not suppress other folder checks", a
     listFiles:async(id)=>{if(id==="denied")throw new Error("private-permission-details");return [{},{}];},
   });
   assert.equal(result.sourceHealth.ok,false);
-  assert.deepEqual(result.sourceHealth.folders,[{stage:"P1",ok:false,code:"FOLDER_LIST_FAILED"},{stage:"P2",ok:true,documentCount:2}]);
+  assert.deepEqual(result.sourceHealth.folders,[{stage:"P1",ok:false,code:"FOLDER_LIST_FAILED"},{stage:"P2",ok:true,documentCount:2,folderVerified:true}]);
   assert.doesNotMatch(JSON.stringify(result),/private|denied|allowed/);
 });
 
@@ -109,5 +112,31 @@ test("disabled Drive project number comes only from validated provider metadata"
     });
     assert.equal(result.sourceHealth.folders[0].projectNumber,expected);
     assert.doesNotMatch(JSON.stringify(result),/private|activationUrl|consumer|service/);
+  }
+});
+
+test("empty listing is accepted only after folder metadata verifies type and nontrashed state", async () => {
+  const calls=[];
+  const result=await actualHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+    pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
+    fetchImpl:async(url)=>{calls.push(url);return url.includes("/files/folder-")
+      ? Response.json({mimeType:"application/vnd.google-apps.folder",trashed:false}) : Response.json({files:[]});},
+  });
+  assert.equal(calls.length,2);
+  assert.match(calls[0],/fields=mimeType%2Ctrashed/);
+  assert.deepEqual(result.sourceHealth.folders,[{stage:"P1",documentCount:0,ok:true,folderVerified:true}]);
+});
+
+test("inaccessible and nonfolder sources cannot masquerade as empty folders", async () => {
+  for(const metadata of [null,{mimeType:"application/vnd.google-apps.document",trashed:false},
+    {mimeType:"application/vnd.google-apps.folder",trashed:true}]) {
+    const result=await actualHealth(progress,{env,ownerId:"admin",tokenProvider:async()=>"token",
+      pool:{query:async()=>({rows:[{folderId:"folder-123456",stage:"P1"}]})},
+      fetchImpl:async()=>metadata ? Response.json(metadata) : Response.json({error:{message:"private-id",errors:[{reason:"notFound"}]}},{status:404}),
+      listFiles:async()=>assert.fail("must not list inaccessible or invalid folder"),
+    });
+    assert.equal(result.sourceHealth.ok,false);
+    assert.equal(result.sourceHealth.folders[0].code,metadata ? "FOLDER_INVALID_OR_TRASHED":"FOLDER_ACCESS_FAILED");
+    assert.doesNotMatch(JSON.stringify(result),/private-id/);
   }
 });

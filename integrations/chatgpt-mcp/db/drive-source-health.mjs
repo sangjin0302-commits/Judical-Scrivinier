@@ -6,6 +6,15 @@ const SAFE_DRIVE_REASONS = new Set(["insufficientPermissions", "accessNotConfigu
   "SERVICE_DISABLED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "forbidden", "notFound",
   "rateLimitExceeded", "userRateLimitExceeded"]);
 
+export async function readFolderMetadata(folderId, token, fetchImpl) {
+  if (!/^[A-Za-z0-9_-]{10,}$/.test(folderId || "")) throw new Error("invalid folder id");
+  const response = await fetchImpl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=mimeType%2Ctrashed&supportsAllDrives=true`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error("folder metadata failed");
+  return response.json();
+}
+
 export function driveDiagnosticEnabled(env, ownerId) {
   const admins = String(env.DRIVE_DIAGNOSTIC_ADMIN_USER_IDS || "").split(",")
     .map((value) => value.trim()).filter(Boolean);
@@ -18,6 +27,7 @@ export function driveDiagnosticEnabled(env, ownerId) {
 // This opt-in Preview diagnostic adds only aggregate metadata to progress.
 export async function withDriveSourceHealth(progress, { pool, ownerId, env = process.env,
   fetchImpl = fetch, tokenProvider = googleAccessToken, listFiles = listFolderDocuments,
+  checkFolder = readFolderMetadata,
   timeoutMs = 8000 } = {}) {
   if (!driveDiagnosticEnabled(env, ownerId)) return progress;
   const controller = new AbortController();
@@ -63,11 +73,19 @@ export async function withDriveSourceHealth(progress, { pool, ownerId, env = pro
         }
         return response;
       };
+      let folderVerified = false;
       try {
+        const metadata = await checkFolder(folder.folderId, token, driveFetch);
+        if (metadata?.mimeType !== "application/vnd.google-apps.folder" || metadata?.trashed !== false) {
+          counts.push({ stage: folder.stage, ok: false, code: "FOLDER_INVALID_OR_TRASHED" });
+          continue;
+        }
+        folderVerified = true;
         const files = await listFiles(folder.folderId, token, driveFetch);
-        counts.push({ stage: folder.stage, documentCount: files.length, ok: true });
+        counts.push({ stage: folder.stage, documentCount: files.length, ok: true, folderVerified: true });
       } catch (error) { counts.push({ stage: folder.stage, ok: false,
-        code: error?.message === "invalid folder id" ? "FOLDER_ID_INVALID" : "FOLDER_LIST_FAILED",
+        code: error?.message === "invalid folder id" ? "FOLDER_ID_INVALID" :
+          folderVerified ? "FOLDER_LIST_FAILED" : "FOLDER_ACCESS_FAILED",
         ...failureMetadata }); }
     }
     return { ok: counts.every((item) => item.ok), readOnly: true, folders: counts };
