@@ -2,10 +2,30 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { publishP2FixedCriteria, p2PublicationDigest } from "../db/publish-p2-fixed-criteria.mjs";
-import { createP2CriteriaManifest } from "../db/p2-fixed-criteria.mjs";
+import { createP2CriteriaManifest, validateP2ApprovedSource } from "../db/p2-fixed-criteria.mjs";
 import { decryptGradingPayload, gradingAad } from "../db/postgres-adapter.mjs";
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+function addCaseEvidence(input) {
+  const scope = { subjectId: input.subjectId, caseId: 'synthetic-case', commonFactsDigest: hash('common-facts'), bindings: [{
+    stableKey: input.stableKey, problemVersionId: input.expectedProblemVersionId,
+    promptDigest: input.expectedProblemDigest, sourceDigest: input.expectedPayloadDigest,
+    criteriaDigest: input.manifest.criteriaDigest, decisionRubricDigest: p2PublicationDigest(input.decisionRubric),
+  }] };
+  const scopeDigest = p2PublicationDigest(scope), testSuiteDigest = hash('independent-suite');
+  const receipts = [{ runId: 'synthetic-run', modelId: 'synthetic-model', executedAt: '2026-01-01T00:00:00.000Z',
+    actualInvocation: true, scopeDigest, testSuiteDigest, requestDigest: hash('request'), responseDigest: hash('response'),
+    resultDigest: hash('result'), passed: true, testCount: 9, failureCount: 0,
+    coverage: { full: 3, equivalent: 3, partial: 1, wrong: 1, abstain: 1 } }];
+  input.caseValidationEvidence = { schemaVersion: 1, ...scope, generatorId: 'generator', audit: {
+    reviewerId: 'independent', scopeDigest, artifactDigest: hash('case-audit'), completeCaseReviewed: true,
+    approved: true, ambiguityCount: 0, missingMeaningCount: 0, unsupportedElementCount: 0, duplicateCount: 0 },
+    benchmark: { scopeDigest, testSuiteDigest, receipts } };
+  input.caseValidationScope = structuredClone({ ...scope, generatorId: 'generator', reviewerId: 'independent',
+    auditArtifactDigest: hash('case-audit'), testSuiteDigest, receipts });
+  input.approvalEvidence.caseValidationDigest = p2PublicationDigest(input.caseValidationEvidence);
+  input.approvalEvidence.reviewEvidenceDigest = p2PublicationDigest({ ...input.reviewEvidence, caseValidationEvidence: input.caseValidationEvidence });
+}
 function setup() {
   const encryptionKey = crypto.randomBytes(32), encryptionKeyId = 'synthetic-key';
   const source = { answer: 'A B', rubric: 'A B', source: 'synthetic' };
@@ -150,5 +170,35 @@ test('decision rule tampering, mismatched elements and unresolved review fail cl
     await assert.rejects(publishP2FixedCriteria(f.pool,f.input,{...f.options,dryRun:false}));
     assert.equal(f.rows().size,1);
     assert.equal(f.audits(),0);
+  }
+});
+test('optional complete-case evidence survives encrypted roundtrip and runtime validation', async () => {
+  const f = setup(); addCaseEvidence(f.input);
+  const opts = { ...f.options, dryRun: false };
+  const result = await publishP2FixedCriteria(f.pool, f.input, opts);
+  const row = f.rows().get(result.keyVersion);
+  const decoded = decryptGradingPayload(row.encrypted_payload, opts.encryptionKey,
+    gradingAad('CIVIL', 'synthetic-item', result.keyVersion, opts.encryptionKeyId), row.payload_digest);
+  assert.deepEqual(decoded.fixedCriteriaReviewEvidence.caseValidationEvidence, f.input.caseValidationEvidence);
+  assert.equal(decoded.fixedCriteriaApproval.caseValidationDigest, f.input.approvalEvidence.caseValidationDigest);
+  validateP2ApprovedSource(decoded, { problemVersionId: f.input.expectedProblemVersionId, problemDigest: f.input.expectedProblemDigest });
+  assert.equal((await publishP2FixedCriteria(f.pool, f.input, opts)).replayed, true);
+});
+test('missing case inputs, tampered decisions and mismatched current item reject before DB', async () => {
+  for (const mutate of [
+    i => delete i.caseValidationScope, i => delete i.caseValidationEvidence,
+    i => delete i.approvalEvidence.caseValidationDigest,
+    i => i.approvalEvidence.caseValidationDigest = hash('different'),
+    i => i.decisionRubric.elements[0].partialCondition = 'changed only condition',
+    i => i.expectedProblemVersionId = 'other-version',
+    i => i.subjectId = 'other-subject',
+    i => i.expectedPayloadDigest = hash('changed-source'),
+    i => i.caseValidationEvidence.benchmark.receipts[0].actualInvocation = false,
+    i => i.caseValidationEvidence.bindings.pop(),
+  ]) {
+    const f = setup(); addCaseEvidence(f.input); mutate(f.input);
+    await assert.rejects(publishP2FixedCriteria(f.pool, f.input, { ...f.options, dryRun: false }));
+    assert.equal(f.statements.length, 0);
+    assert.equal(f.rows().size, 1);
   }
 });

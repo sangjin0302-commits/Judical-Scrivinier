@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { decryptGradingPayload, gradingAad } from "./postgres-adapter.mjs";
 import { createP2CriteriaManifest, validateP2FixedCriteria, validateP2DecisionRubric } from "./p2-fixed-criteria.mjs";
+import { validateP2CompleteCaseEvidence } from './p2-complete-case-evidence.mjs';
 export { validateP2DecisionRubric } from "./p2-fixed-criteria.mjs";
 
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -54,6 +55,25 @@ export async function publishP2FixedCriteria(pool, input, {
     criteriaFile: text(review.criteriaFile), criteriaFileDigest: digest(review.criteriaFileDigest),
     auditFile: text(review.auditFile), auditFileDigest: digest(review.auditFileDigest),
     duplicateGroups: 0, unsupportedElements: 0, requiresRevision: false };
+  const hasCaseEvidence = Object.hasOwn(input, 'caseValidationEvidence');
+  const hasCaseScope = Object.hasOwn(input, 'caseValidationScope');
+  const hasCaseApproval = Object.hasOwn(evidence, 'caseValidationDigest');
+  if (hasCaseEvidence || hasCaseScope || hasCaseApproval || Object.hasOwn(review, 'caseValidationEvidence')) {
+    if (!hasCaseEvidence || !hasCaseScope || !hasCaseApproval) throw new Error('complete-case evidence and trusted scope required together');
+    // Scope and actual execution receipts must be independently loaded by the
+    // trusted maintenance caller, not inferred from the candidate evidence.
+    const checked = validateP2CompleteCaseEvidence(input.caseValidationEvidence, input.caseValidationScope);
+    if (digest(evidence.caseValidationDigest) !== checked.evidenceDigest) throw new Error('complete-case approval mismatch');
+    const item = input.caseValidationScope.bindings.find(item => item.stableKey === stableKey);
+    if (input.caseValidationScope.subjectId !== subjectId || !item || item.problemVersionId !== problemVersionId ||
+        item.promptDigest !== problemDigest || item.sourceDigest !== originalPayloadDigest ||
+        item.criteriaDigest !== input.manifest.criteriaDigest ||
+        item.decisionRubricDigest !== p2PublicationDigest(input.decisionRubric)) throw new Error('complete-case item binding mismatch');
+    if (Object.hasOwn(review, 'caseValidationEvidence') &&
+        p2PublicationDigest(review.caseValidationEvidence) !== checked.evidenceDigest) throw new Error('complete-case review mismatch');
+    reviewEvidence.caseValidationEvidence = structuredClone(input.caseValidationEvidence);
+    approval.caseValidationDigest = checked.evidenceDigest;
+  }
   if (p2PublicationDigest(reviewEvidence) !== approval.reviewEvidenceDigest) throw new Error("review evidence digest mismatch");
   const client = await pool.connect();
   try {
