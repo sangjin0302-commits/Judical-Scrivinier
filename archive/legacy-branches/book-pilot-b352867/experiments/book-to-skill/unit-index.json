@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unit_id": "B1-P0040-0047",
+  "page_range": [
+    40,
+    47
+  ],
+  "lesson": "experiments/book-to-skill/B1-P0040-0047-pilot.md",
+  "lesson_sha256": "9e7af1138b9cd3a9d416512ef3df29350ee58adc2d903ab7692c724983aa8ecf",
+  "issue_ids": [
+    "B1-P0040-0047-I01",
+    "B1-P0040-0047-I02",
+    "B1-P0040-0047-I03",
+    "B1-P0040-0047-I04",
+    "B1-P0040-0047-I05"
+  ],
+  "tiers": {
+    "B1-P0040-0047-I01": "A",
+    "B1-P0040-0047-I02": "A",
+    "B1-P0040-0047-I03": "A",
+    "B1-P0040-0047-I04": "A",
+    "B1-P0040-0047-I05": "B"
+  },
+  "source_verification": "private-source-checked"
+}

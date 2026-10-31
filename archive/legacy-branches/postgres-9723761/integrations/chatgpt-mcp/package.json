@@ -1,0 +1,27 @@
+{
+  "name": "civil-p1-chatgpt-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "oauth:login": "node oauth-login.mjs",
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:docs-sync-integration": "node test/google-docs-sync.integration.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "jose": "^6.2.13",
+    "mcp-handler": "^2.3.0",
+    "next": "^16.4.3",
+    "pg": "^8.16.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  }
+}

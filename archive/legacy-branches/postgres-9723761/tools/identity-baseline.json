@@ -1,0 +1,1473 @@
+{
+  "schema_version": 1,
+  "source_commit": "9a8806cd8b92369d8db443bb6f9564ed70c0e4dc",
+  "purpose": "Identity baseline from committed source; additions to lessons and mappings are allowed. Do not regenerate to bypass validation failures.",
+  "units": [
+    {
+      "unit_id": "B1-P0008-0011",
+      "volume": "1권",
+      "dangi_pdf_start": "8",
+      "dangi_pdf_end": "11"
+    },
+    {
+      "unit_id": "B1-P0012-0018",
+      "volume": "1권",
+      "dangi_pdf_start": "12",
+      "dangi_pdf_end": "18"
+    },
+    {
+      "unit_id": "B1-P0019-0023",
+      "volume": "1권",
+      "dangi_pdf_start": "19",
+      "dangi_pdf_end": "23"
+    },
+    {
+      "unit_id": "B1-P0024-0027",
+      "volume": "1권",
+      "dangi_pdf_start": "24",
+      "dangi_pdf_end": "27"
+    },
+    {
+      "unit_id": "B1-P0028-0035",
+      "volume": "1권",
+      "dangi_pdf_start": "28",
+      "dangi_pdf_end": "35"
+    },
+    {
+      "unit_id": "B1-P0036-0039",
+      "volume": "1권",
+      "dangi_pdf_start": "36",
+      "dangi_pdf_end": "39"
+    },
+    {
+      "unit_id": "B1-P0040-0047",
+      "volume": "1권",
+      "dangi_pdf_start": "40",
+      "dangi_pdf_end": "47"
+    },
+    {
+      "unit_id": "B1-P0048-0050",
+      "volume": "1권",
+      "dangi_pdf_start": "48",
+      "dangi_pdf_end": "50"
+    },
+    {
+      "unit_id": "B1-P0051-0058",
+      "volume": "1권",
+      "dangi_pdf_start": "51",
+      "dangi_pdf_end": "58"
+    },
+    {
+      "unit_id": "B1-P0059-0059",
+      "volume": "1권",
+      "dangi_pdf_start": "59",
+      "dangi_pdf_end": "59"
+    },
+    {
+      "unit_id": "B1-P0060-0063",
+      "volume": "1권",
+      "dangi_pdf_start": "60",
+      "dangi_pdf_end": "63"
+    },
+    {
+      "unit_id": "B1-P0064-0071",
+      "volume": "1권",
+      "dangi_pdf_start": "64",
+      "dangi_pdf_end": "71"
+    },
+    {
+      "unit_id": "B1-P0072-0079",
+      "volume": "1권",
+      "dangi_pdf_start": "72",
+      "dangi_pdf_end": "79"
+    },
+    {
+      "unit_id": "B1-P0080-0087",
+      "volume": "1권",
+      "dangi_pdf_start": "80",
+      "dangi_pdf_end": "87"
+    },
+    {
+      "unit_id": "B1-P0088-0090",
+      "volume": "1권",
+      "dangi_pdf_start": "88",
+      "dangi_pdf_end": "90"
+    },
+    {
+      "unit_id": "B1-P0091-0098",
+      "volume": "1권",
+      "dangi_pdf_start": "91",
+      "dangi_pdf_end": "98"
+    },
+    {
+      "unit_id": "B1-P0099-0100",
+      "volume": "1권",
+      "dangi_pdf_start": "99",
+      "dangi_pdf_end": "100"
+    },
+    {
+      "unit_id": "B1-P0101-0108",
+      "volume": "1권",
+      "dangi_pdf_start": "101",
+      "dangi_pdf_end": "108"
+    },
+    {
+      "unit_id": "B1-P0109-0116",
+      "volume": "1권",
+      "dangi_pdf_start": "109",
+      "dangi_pdf_end": "116"
+    },
+    {
+      "unit_id": "B1-P0117-0124",
+      "volume": "1권",
+      "dangi_pdf_start": "117",
+      "dangi_pdf_end": "124"
+    },
+    {
+      "unit_id": "B1-P0125-0132",
+      "volume": "1권",
+      "dangi_pdf_start": "125",
+      "dangi_pdf_end": "132"
+    },
+    {
+      "unit_id": "B1-P0133-0133",
+      "volume": "1권",
+      "dangi_pdf_start": "133",
+      "dangi_pdf_end": "133"
+    },
+    {
+      "unit_id": "B1-P0134-0141",
+      "volume": "1권",
+      "dangi_pdf_start": "134",
+      "dangi_pdf_end": "141"
+    },
+    {
+      "unit_id": "B1-P0142-0145",
+      "volume": "1권",
+      "dangi_pdf_start": "142",
+      "dangi_pdf_end": "145"
+    },
+    {
+      "unit_id": "B1-P0146-0149",
+      "volume": "1권",
+      "dangi_pdf_start": "146",
+      "dangi_pdf_end": "149"
+    },
+    {
+      "unit_id": "B1-P0150-0150",
+      "volume": "1권",
+      "dangi_pdf_start": "150",
+      "dangi_pdf_end": "150"
+    },
+    {
+      "unit_id": "B1-P0151-0158",
+      "volume": "1권",
+      "dangi_pdf_start": "151",
+      "dangi_pdf_end": "158"
+    },
+    {
+      "unit_id": "B1-P0159-0166",
+      "volume": "1권",
+      "dangi_pdf_start": "159",
+      "dangi_pdf_end": "166"
+    },
+    {
+      "unit_id": "B1-P0167-0174",
+      "volume": "1권",
+      "dangi_pdf_start": "167",
+      "dangi_pdf_end": "174"
+    },
+    {
+      "unit_id": "B1-P0175-0182",
+      "volume": "1권",
+      "dangi_pdf_start": "175",
+      "dangi_pdf_end": "182"
+    },
+    {
+      "unit_id": "B1-P0183-0190",
+      "volume": "1권",
+      "dangi_pdf_start": "183",
+      "dangi_pdf_end": "190"
+    },
+    {
+      "unit_id": "B1-P0191-0198",
+      "volume": "1권",
+      "dangi_pdf_start": "191",
+      "dangi_pdf_end": "198"
+    },
+    {
+      "unit_id": "B1-P0199-0200",
+      "volume": "1권",
+      "dangi_pdf_start": "199",
+      "dangi_pdf_end": "200"
+    },
+    {
+      "unit_id": "B1-P0201-0208",
+      "volume": "1권",
+      "dangi_pdf_start": "201",
+      "dangi_pdf_end": "208"
+    },
+    {
+      "unit_id": "B1-P0209-0216",
+      "volume": "1권",
+      "dangi_pdf_start": "209",
+      "dangi_pdf_end": "216"
+    },
+    {
+      "unit_id": "B1-P0217-0224",
+      "volume": "1권",
+      "dangi_pdf_start": "217",
+      "dangi_pdf_end": "224"
+    },
+    {
+      "unit_id": "B1-P0225-0232",
+      "volume": "1권",
+      "dangi_pdf_start": "225",
+      "dangi_pdf_end": "232"
+    },
+    {
+      "unit_id": "B1-P0233-0240",
+      "volume": "1권",
+      "dangi_pdf_start": "233",
+      "dangi_pdf_end": "240"
+    },
+    {
+      "unit_id": "B1-P0241-0248",
+      "volume": "1권",
+      "dangi_pdf_start": "241",
+      "dangi_pdf_end": "248"
+    },
+    {
+      "unit_id": "B1-P0249-0250",
+      "volume": "1권",
+      "dangi_pdf_start": "249",
+      "dangi_pdf_end": "250"
+    },
+    {
+      "unit_id": "B1-P0251-0256",
+      "volume": "1권",
+      "dangi_pdf_start": "251",
+      "dangi_pdf_end": "256"
+    },
+    {
+      "unit_id": "B1-P0257-0264",
+      "volume": "1권",
+      "dangi_pdf_start": "257",
+      "dangi_pdf_end": "264"
+    },
+    {
+      "unit_id": "B1-P0265-0272",
+      "volume": "1권",
+      "dangi_pdf_start": "265",
+      "dangi_pdf_end": "272"
+    },
+    {
+      "unit_id": "B1-P0273-0280",
+      "volume": "1권",
+      "dangi_pdf_start": "273",
+      "dangi_pdf_end": "280"
+    },
+    {
+      "unit_id": "B1-P0281-0288",
+      "volume": "1권",
+      "dangi_pdf_start": "281",
+      "dangi_pdf_end": "288"
+    },
+    {
+      "unit_id": "B1-P0289-0291",
+      "volume": "1권",
+      "dangi_pdf_start": "289",
+      "dangi_pdf_end": "291"
+    },
+    {
+      "unit_id": "B1-P0292-0299",
+      "volume": "1권",
+      "dangi_pdf_start": "292",
+      "dangi_pdf_end": "299"
+    },
+    {
+      "unit_id": "B1-P0300-0300",
+      "volume": "1권",
+      "dangi_pdf_start": "300",
+      "dangi_pdf_end": "300"
+    },
+    {
+      "unit_id": "B1-P0301-0308",
+      "volume": "1권",
+      "dangi_pdf_start": "301",
+      "dangi_pdf_end": "308"
+    },
+    {
+      "unit_id": "B1-P0309-0316",
+      "volume": "1권",
+      "dangi_pdf_start": "309",
+      "dangi_pdf_end": "316"
+    },
+    {
+      "unit_id": "B1-P0317-0324",
+      "volume": "1권",
+      "dangi_pdf_start": "317",
+      "dangi_pdf_end": "324"
+    },
+    {
+      "unit_id": "B1-P0325-0332",
+      "volume": "1권",
+      "dangi_pdf_start": "325",
+      "dangi_pdf_end": "332"
+    },
+    {
+      "unit_id": "B1-P0333-0340",
+      "volume": "1권",
+      "dangi_pdf_start": "333",
+      "dangi_pdf_end": "340"
+    },
+    {
+      "unit_id": "B1-P0341-0348",
+      "volume": "1권",
+      "dangi_pdf_start": "341",
+      "dangi_pdf_end": "348"
+    },
+    {
+      "unit_id": "B1-P0349-0350",
+      "volume": "1권",
+      "dangi_pdf_start": "349",
+      "dangi_pdf_end": "350"
+    },
+    {
+      "unit_id": "B1-P0351-0358",
+      "volume": "1권",
+      "dangi_pdf_start": "351",
+      "dangi_pdf_end": "358"
+    },
+    {
+      "unit_id": "B1-P0359-0366",
+      "volume": "1권",
+      "dangi_pdf_start": "359",
+      "dangi_pdf_end": "366"
+    },
+    {
+      "unit_id": "B1-P0367-0367",
+      "volume": "1권",
+      "dangi_pdf_start": "367",
+      "dangi_pdf_end": "367"
+    },
+    {
+      "unit_id": "B1-P0368-0373",
+      "volume": "1권",
+      "dangi_pdf_start": "368",
+      "dangi_pdf_end": "373"
+    },
+    {
+      "unit_id": "B1-P0374-0381",
+      "volume": "1권",
+      "dangi_pdf_start": "374",
+      "dangi_pdf_end": "381"
+    },
+    {
+      "unit_id": "B1-P0382-0389",
+      "volume": "1권",
+      "dangi_pdf_start": "382",
+      "dangi_pdf_end": "389"
+    },
+    {
+      "unit_id": "B1-P0390-0397",
+      "volume": "1권",
+      "dangi_pdf_start": "390",
+      "dangi_pdf_end": "397"
+    },
+    {
+      "unit_id": "B1-P0398-0400",
+      "volume": "1권",
+      "dangi_pdf_start": "398",
+      "dangi_pdf_end": "400"
+    },
+    {
+      "unit_id": "B1-P0401-0405",
+      "volume": "1권",
+      "dangi_pdf_start": "401",
+      "dangi_pdf_end": "405"
+    },
+    {
+      "unit_id": "B1-P0406-0408",
+      "volume": "1권",
+      "dangi_pdf_start": "406",
+      "dangi_pdf_end": "408"
+    },
+    {
+      "unit_id": "B1-P0409-0416",
+      "volume": "1권",
+      "dangi_pdf_start": "409",
+      "dangi_pdf_end": "416"
+    },
+    {
+      "unit_id": "B1-P0417-0424",
+      "volume": "1권",
+      "dangi_pdf_start": "417",
+      "dangi_pdf_end": "424"
+    },
+    {
+      "unit_id": "B1-P0425-0426",
+      "volume": "1권",
+      "dangi_pdf_start": "425",
+      "dangi_pdf_end": "426"
+    },
+    {
+      "unit_id": "B1-P0427-0434",
+      "volume": "1권",
+      "dangi_pdf_start": "427",
+      "dangi_pdf_end": "434"
+    },
+    {
+      "unit_id": "B1-P0435-0442",
+      "volume": "1권",
+      "dangi_pdf_start": "435",
+      "dangi_pdf_end": "442"
+    },
+    {
+      "unit_id": "B1-P0443-0450",
+      "volume": "1권",
+      "dangi_pdf_start": "443",
+      "dangi_pdf_end": "450"
+    },
+    {
+      "unit_id": "B1-P0451-0454",
+      "volume": "1권",
+      "dangi_pdf_start": "451",
+      "dangi_pdf_end": "454"
+    },
+    {
+      "unit_id": "B1-P0455-0462",
+      "volume": "1권",
+      "dangi_pdf_start": "455",
+      "dangi_pdf_end": "462"
+    },
+    {
+      "unit_id": "B1-P0463-0470",
+      "volume": "1권",
+      "dangi_pdf_start": "463",
+      "dangi_pdf_end": "470"
+    },
+    {
+      "unit_id": "B1-P0471-0473",
+      "volume": "1권",
+      "dangi_pdf_start": "471",
+      "dangi_pdf_end": "473"
+    },
+    {
+      "unit_id": "B1-P0474-0481",
+      "volume": "1권",
+      "dangi_pdf_start": "474",
+      "dangi_pdf_end": "481"
+    },
+    {
+      "unit_id": "B1-P0482-0485",
+      "volume": "1권",
+      "dangi_pdf_start": "482",
+      "dangi_pdf_end": "485"
+    },
+    {
+      "unit_id": "B1-P0486-0493",
+      "volume": "1권",
+      "dangi_pdf_start": "486",
+      "dangi_pdf_end": "493"
+    },
+    {
+      "unit_id": "B1-P0494-0500",
+      "volume": "1권",
+      "dangi_pdf_start": "494",
+      "dangi_pdf_end": "500"
+    },
+    {
+      "unit_id": "B1-P0501-0507",
+      "volume": "1권",
+      "dangi_pdf_start": "501",
+      "dangi_pdf_end": "507"
+    },
+    {
+      "unit_id": "B1-P0508-0513",
+      "volume": "1권",
+      "dangi_pdf_start": "508",
+      "dangi_pdf_end": "513"
+    },
+    {
+      "unit_id": "B1-P0514-0521",
+      "volume": "1권",
+      "dangi_pdf_start": "514",
+      "dangi_pdf_end": "521"
+    },
+    {
+      "unit_id": "B1-P0522-0527",
+      "volume": "1권",
+      "dangi_pdf_start": "522",
+      "dangi_pdf_end": "527"
+    },
+    {
+      "unit_id": "B1-P0528-0532",
+      "volume": "1권",
+      "dangi_pdf_start": "528",
+      "dangi_pdf_end": "532"
+    },
+    {
+      "unit_id": "B1-P0533-0540",
+      "volume": "1권",
+      "dangi_pdf_start": "533",
+      "dangi_pdf_end": "540"
+    },
+    {
+      "unit_id": "B1-P0541-0545",
+      "volume": "1권",
+      "dangi_pdf_start": "541",
+      "dangi_pdf_end": "545"
+    },
+    {
+      "unit_id": "B1-P0546-0550",
+      "volume": "1권",
+      "dangi_pdf_start": "546",
+      "dangi_pdf_end": "550"
+    },
+    {
+      "unit_id": "B1-P0551-0558",
+      "volume": "1권",
+      "dangi_pdf_start": "551",
+      "dangi_pdf_end": "558"
+    },
+    {
+      "unit_id": "B1-P0559-0563",
+      "volume": "1권",
+      "dangi_pdf_start": "559",
+      "dangi_pdf_end": "563"
+    },
+    {
+      "unit_id": "B1-P0564-0571",
+      "volume": "1권",
+      "dangi_pdf_start": "564",
+      "dangi_pdf_end": "571"
+    },
+    {
+      "unit_id": "B1-P0572-0579",
+      "volume": "1권",
+      "dangi_pdf_start": "572",
+      "dangi_pdf_end": "579"
+    },
+    {
+      "unit_id": "B1-P0580-0587",
+      "volume": "1권",
+      "dangi_pdf_start": "580",
+      "dangi_pdf_end": "587"
+    },
+    {
+      "unit_id": "B1-P0588-0593",
+      "volume": "1권",
+      "dangi_pdf_start": "588",
+      "dangi_pdf_end": "593"
+    },
+    {
+      "unit_id": "B1-P0594-0600",
+      "volume": "1권",
+      "dangi_pdf_start": "594",
+      "dangi_pdf_end": "600"
+    },
+    {
+      "unit_id": "B1-P0601-0608",
+      "volume": "1권",
+      "dangi_pdf_start": "601",
+      "dangi_pdf_end": "608"
+    },
+    {
+      "unit_id": "B1-P0609-0610",
+      "volume": "1권",
+      "dangi_pdf_start": "609",
+      "dangi_pdf_end": "610"
+    },
+    {
+      "unit_id": "B2-P0010-0017",
+      "volume": "2권",
+      "dangi_pdf_start": "10",
+      "dangi_pdf_end": "17"
+    },
+    {
+      "unit_id": "B2-P0018-0021",
+      "volume": "2권",
+      "dangi_pdf_start": "18",
+      "dangi_pdf_end": "21"
+    },
+    {
+      "unit_id": "B2-P0022-0029",
+      "volume": "2권",
+      "dangi_pdf_start": "22",
+      "dangi_pdf_end": "29"
+    },
+    {
+      "unit_id": "B2-P0030-0037",
+      "volume": "2권",
+      "dangi_pdf_start": "30",
+      "dangi_pdf_end": "37"
+    },
+    {
+      "unit_id": "B2-P0038-0043",
+      "volume": "2권",
+      "dangi_pdf_start": "38",
+      "dangi_pdf_end": "43"
+    },
+    {
+      "unit_id": "B2-P0044-0048",
+      "volume": "2권",
+      "dangi_pdf_start": "44",
+      "dangi_pdf_end": "48"
+    },
+    {
+      "unit_id": "B2-P0049-0050",
+      "volume": "2권",
+      "dangi_pdf_start": "49",
+      "dangi_pdf_end": "50"
+    },
+    {
+      "unit_id": "B2-P0051-0058",
+      "volume": "2권",
+      "dangi_pdf_start": "51",
+      "dangi_pdf_end": "58"
+    },
+    {
+      "unit_id": "B2-P0059-0066",
+      "volume": "2권",
+      "dangi_pdf_start": "59",
+      "dangi_pdf_end": "66"
+    },
+    {
+      "unit_id": "B2-P0067-0074",
+      "volume": "2권",
+      "dangi_pdf_start": "67",
+      "dangi_pdf_end": "74"
+    },
+    {
+      "unit_id": "B2-P0075-0082",
+      "volume": "2권",
+      "dangi_pdf_start": "75",
+      "dangi_pdf_end": "82"
+    },
+    {
+      "unit_id": "B2-P0083-0090",
+      "volume": "2권",
+      "dangi_pdf_start": "83",
+      "dangi_pdf_end": "90"
+    },
+    {
+      "unit_id": "B2-P0091-0097",
+      "volume": "2권",
+      "dangi_pdf_start": "91",
+      "dangi_pdf_end": "97"
+    },
+    {
+      "unit_id": "B2-P0098-0100",
+      "volume": "2권",
+      "dangi_pdf_start": "98",
+      "dangi_pdf_end": "100"
+    },
+    {
+      "unit_id": "B2-P0101-0108",
+      "volume": "2권",
+      "dangi_pdf_start": "101",
+      "dangi_pdf_end": "108"
+    },
+    {
+      "unit_id": "B2-P0109-0116",
+      "volume": "2권",
+      "dangi_pdf_start": "109",
+      "dangi_pdf_end": "116"
+    },
+    {
+      "unit_id": "B2-P0117-0124",
+      "volume": "2권",
+      "dangi_pdf_start": "117",
+      "dangi_pdf_end": "124"
+    },
+    {
+      "unit_id": "B2-P0125-0130",
+      "volume": "2권",
+      "dangi_pdf_start": "125",
+      "dangi_pdf_end": "130"
+    },
+    {
+      "unit_id": "B2-P0131-0135",
+      "volume": "2권",
+      "dangi_pdf_start": "131",
+      "dangi_pdf_end": "135"
+    },
+    {
+      "unit_id": "B2-P0136-0137",
+      "volume": "2권",
+      "dangi_pdf_start": "136",
+      "dangi_pdf_end": "137"
+    },
+    {
+      "unit_id": "B2-P0138-0143",
+      "volume": "2권",
+      "dangi_pdf_start": "138",
+      "dangi_pdf_end": "143"
+    },
+    {
+      "unit_id": "B2-P0144-0150",
+      "volume": "2권",
+      "dangi_pdf_start": "144",
+      "dangi_pdf_end": "150"
+    },
+    {
+      "unit_id": "B2-P0151-0158",
+      "volume": "2권",
+      "dangi_pdf_start": "151",
+      "dangi_pdf_end": "158"
+    },
+    {
+      "unit_id": "B2-P0159-0166",
+      "volume": "2권",
+      "dangi_pdf_start": "159",
+      "dangi_pdf_end": "166"
+    },
+    {
+      "unit_id": "B2-P0167-0174",
+      "volume": "2권",
+      "dangi_pdf_start": "167",
+      "dangi_pdf_end": "174"
+    },
+    {
+      "unit_id": "B2-P0175-0182",
+      "volume": "2권",
+      "dangi_pdf_start": "175",
+      "dangi_pdf_end": "182"
+    },
+    {
+      "unit_id": "B2-P0183-0189",
+      "volume": "2권",
+      "dangi_pdf_start": "183",
+      "dangi_pdf_end": "189"
+    },
+    {
+      "unit_id": "B2-P0190-0197",
+      "volume": "2권",
+      "dangi_pdf_start": "190",
+      "dangi_pdf_end": "197"
+    },
+    {
+      "unit_id": "B2-P0198-0200",
+      "volume": "2권",
+      "dangi_pdf_start": "198",
+      "dangi_pdf_end": "200"
+    },
+    {
+      "unit_id": "B2-P0201-0208",
+      "volume": "2권",
+      "dangi_pdf_start": "201",
+      "dangi_pdf_end": "208"
+    },
+    {
+      "unit_id": "B2-P0209-0216",
+      "volume": "2권",
+      "dangi_pdf_start": "209",
+      "dangi_pdf_end": "216"
+    },
+    {
+      "unit_id": "B2-P0217-0219",
+      "volume": "2권",
+      "dangi_pdf_start": "217",
+      "dangi_pdf_end": "219"
+    },
+    {
+      "unit_id": "B2-P0220-0221",
+      "volume": "2권",
+      "dangi_pdf_start": "220",
+      "dangi_pdf_end": "221"
+    },
+    {
+      "unit_id": "B2-P0222-0229",
+      "volume": "2권",
+      "dangi_pdf_start": "222",
+      "dangi_pdf_end": "229"
+    },
+    {
+      "unit_id": "B2-P0230-0237",
+      "volume": "2권",
+      "dangi_pdf_start": "230",
+      "dangi_pdf_end": "237"
+    },
+    {
+      "unit_id": "B2-P0238-0245",
+      "volume": "2권",
+      "dangi_pdf_start": "238",
+      "dangi_pdf_end": "245"
+    },
+    {
+      "unit_id": "B2-P0246-0249",
+      "volume": "2권",
+      "dangi_pdf_start": "246",
+      "dangi_pdf_end": "249"
+    },
+    {
+      "unit_id": "B2-P0250-0250",
+      "volume": "2권",
+      "dangi_pdf_start": "250",
+      "dangi_pdf_end": "250"
+    },
+    {
+      "unit_id": "B2-P0251-0253",
+      "volume": "2권",
+      "dangi_pdf_start": "251",
+      "dangi_pdf_end": "253"
+    },
+    {
+      "unit_id": "B2-P0254-0259",
+      "volume": "2권",
+      "dangi_pdf_start": "254",
+      "dangi_pdf_end": "259"
+    },
+    {
+      "unit_id": "B2-P0260-0267",
+      "volume": "2권",
+      "dangi_pdf_start": "260",
+      "dangi_pdf_end": "267"
+    },
+    {
+      "unit_id": "B2-P0268-0271",
+      "volume": "2권",
+      "dangi_pdf_start": "268",
+      "dangi_pdf_end": "271"
+    },
+    {
+      "unit_id": "B2-P0272-0275",
+      "volume": "2권",
+      "dangi_pdf_start": "272",
+      "dangi_pdf_end": "275"
+    },
+    {
+      "unit_id": "B2-P0276-0277",
+      "volume": "2권",
+      "dangi_pdf_start": "276",
+      "dangi_pdf_end": "277"
+    },
+    {
+      "unit_id": "B2-P0278-0279",
+      "volume": "2권",
+      "dangi_pdf_start": "278",
+      "dangi_pdf_end": "279"
+    },
+    {
+      "unit_id": "B2-P0280-0287",
+      "volume": "2권",
+      "dangi_pdf_start": "280",
+      "dangi_pdf_end": "287"
+    },
+    {
+      "unit_id": "B2-P0288-0295",
+      "volume": "2권",
+      "dangi_pdf_start": "288",
+      "dangi_pdf_end": "295"
+    },
+    {
+      "unit_id": "B2-P0296-0300",
+      "volume": "2권",
+      "dangi_pdf_start": "296",
+      "dangi_pdf_end": "300"
+    },
+    {
+      "unit_id": "B2-P0301-0308",
+      "volume": "2권",
+      "dangi_pdf_start": "301",
+      "dangi_pdf_end": "308"
+    },
+    {
+      "unit_id": "B2-P0309-0316",
+      "volume": "2권",
+      "dangi_pdf_start": "309",
+      "dangi_pdf_end": "316"
+    },
+    {
+      "unit_id": "B2-P0317-0324",
+      "volume": "2권",
+      "dangi_pdf_start": "317",
+      "dangi_pdf_end": "324"
+    },
+    {
+      "unit_id": "B2-P0325-0332",
+      "volume": "2권",
+      "dangi_pdf_start": "325",
+      "dangi_pdf_end": "332"
+    },
+    {
+      "unit_id": "B2-P0333-0340",
+      "volume": "2권",
+      "dangi_pdf_start": "333",
+      "dangi_pdf_end": "340"
+    },
+    {
+      "unit_id": "B2-P0341-0342",
+      "volume": "2권",
+      "dangi_pdf_start": "341",
+      "dangi_pdf_end": "342"
+    },
+    {
+      "unit_id": "B2-P0343-0350",
+      "volume": "2권",
+      "dangi_pdf_start": "343",
+      "dangi_pdf_end": "350"
+    },
+    {
+      "unit_id": "B2-P0351-0358",
+      "volume": "2권",
+      "dangi_pdf_start": "351",
+      "dangi_pdf_end": "358"
+    },
+    {
+      "unit_id": "B2-P0359-0366",
+      "volume": "2권",
+      "dangi_pdf_start": "359",
+      "dangi_pdf_end": "366"
+    },
+    {
+      "unit_id": "B2-P0367-0374",
+      "volume": "2권",
+      "dangi_pdf_start": "367",
+      "dangi_pdf_end": "374"
+    },
+    {
+      "unit_id": "B2-P0375-0382",
+      "volume": "2권",
+      "dangi_pdf_start": "375",
+      "dangi_pdf_end": "382"
+    },
+    {
+      "unit_id": "B2-P0383-0390",
+      "volume": "2권",
+      "dangi_pdf_start": "383",
+      "dangi_pdf_end": "390"
+    },
+    {
+      "unit_id": "B2-P0391-0398",
+      "volume": "2권",
+      "dangi_pdf_start": "391",
+      "dangi_pdf_end": "398"
+    },
+    {
+      "unit_id": "B2-P0399-0400",
+      "volume": "2권",
+      "dangi_pdf_start": "399",
+      "dangi_pdf_end": "400"
+    },
+    {
+      "unit_id": "B2-P0401-0408",
+      "volume": "2권",
+      "dangi_pdf_start": "401",
+      "dangi_pdf_end": "408"
+    },
+    {
+      "unit_id": "B2-P0409-0416",
+      "volume": "2권",
+      "dangi_pdf_start": "409",
+      "dangi_pdf_end": "416"
+    },
+    {
+      "unit_id": "B2-P0417-0424",
+      "volume": "2권",
+      "dangi_pdf_start": "417",
+      "dangi_pdf_end": "424"
+    },
+    {
+      "unit_id": "B2-P0425-0432",
+      "volume": "2권",
+      "dangi_pdf_start": "425",
+      "dangi_pdf_end": "432"
+    },
+    {
+      "unit_id": "B2-P0433-0440",
+      "volume": "2권",
+      "dangi_pdf_start": "433",
+      "dangi_pdf_end": "440"
+    },
+    {
+      "unit_id": "B2-P0441-0448",
+      "volume": "2권",
+      "dangi_pdf_start": "441",
+      "dangi_pdf_end": "448"
+    },
+    {
+      "unit_id": "B2-P0449-0450",
+      "volume": "2권",
+      "dangi_pdf_start": "449",
+      "dangi_pdf_end": "450"
+    },
+    {
+      "unit_id": "B2-P0451-0458",
+      "volume": "2권",
+      "dangi_pdf_start": "451",
+      "dangi_pdf_end": "458"
+    },
+    {
+      "unit_id": "B2-P0459-0466",
+      "volume": "2권",
+      "dangi_pdf_start": "459",
+      "dangi_pdf_end": "466"
+    },
+    {
+      "unit_id": "B2-P0467-0474",
+      "volume": "2권",
+      "dangi_pdf_start": "467",
+      "dangi_pdf_end": "474"
+    },
+    {
+      "unit_id": "B2-P0475-0482",
+      "volume": "2권",
+      "dangi_pdf_start": "475",
+      "dangi_pdf_end": "482"
+    },
+    {
+      "unit_id": "B2-P0483-0483",
+      "volume": "2권",
+      "dangi_pdf_start": "483",
+      "dangi_pdf_end": "483"
+    },
+    {
+      "unit_id": "B2-P0484-0491",
+      "volume": "2권",
+      "dangi_pdf_start": "484",
+      "dangi_pdf_end": "491"
+    },
+    {
+      "unit_id": "B2-P0492-0499",
+      "volume": "2권",
+      "dangi_pdf_start": "492",
+      "dangi_pdf_end": "499"
+    },
+    {
+      "unit_id": "B2-P0500-0500",
+      "volume": "2권",
+      "dangi_pdf_start": "500",
+      "dangi_pdf_end": "500"
+    },
+    {
+      "unit_id": "B2-P0501-0508",
+      "volume": "2권",
+      "dangi_pdf_start": "501",
+      "dangi_pdf_end": "508"
+    },
+    {
+      "unit_id": "B2-P0509-0511",
+      "volume": "2권",
+      "dangi_pdf_start": "509",
+      "dangi_pdf_end": "511"
+    },
+    {
+      "unit_id": "B2-P0512-0519",
+      "volume": "2권",
+      "dangi_pdf_start": "512",
+      "dangi_pdf_end": "519"
+    },
+    {
+      "unit_id": "B2-P0520-0527",
+      "volume": "2권",
+      "dangi_pdf_start": "520",
+      "dangi_pdf_end": "527"
+    },
+    {
+      "unit_id": "B2-P0528-0535",
+      "volume": "2권",
+      "dangi_pdf_start": "528",
+      "dangi_pdf_end": "535"
+    },
+    {
+      "unit_id": "B2-P0536-0543",
+      "volume": "2권",
+      "dangi_pdf_start": "536",
+      "dangi_pdf_end": "543"
+    },
+    {
+      "unit_id": "B2-P0544-0550",
+      "volume": "2권",
+      "dangi_pdf_start": "544",
+      "dangi_pdf_end": "550"
+    },
+    {
+      "unit_id": "B2-P0551-0558",
+      "volume": "2권",
+      "dangi_pdf_start": "551",
+      "dangi_pdf_end": "558"
+    },
+    {
+      "unit_id": "B2-P0559-0559",
+      "volume": "2권",
+      "dangi_pdf_start": "559",
+      "dangi_pdf_end": "559"
+    },
+    {
+      "unit_id": "B2-P0560-0563",
+      "volume": "2권",
+      "dangi_pdf_start": "560",
+      "dangi_pdf_end": "563"
+    },
+    {
+      "unit_id": "B2-P0564-0571",
+      "volume": "2권",
+      "dangi_pdf_start": "564",
+      "dangi_pdf_end": "571"
+    },
+    {
+      "unit_id": "B2-P0572-0572",
+      "volume": "2권",
+      "dangi_pdf_start": "572",
+      "dangi_pdf_end": "572"
+    },
+    {
+      "unit_id": "B2-P0573-0577",
+      "volume": "2권",
+      "dangi_pdf_start": "573",
+      "dangi_pdf_end": "577"
+    },
+    {
+      "unit_id": "B2-P0578-0581",
+      "volume": "2권",
+      "dangi_pdf_start": "578",
+      "dangi_pdf_end": "581"
+    },
+    {
+      "unit_id": "B2-P0582-0585",
+      "volume": "2권",
+      "dangi_pdf_start": "582",
+      "dangi_pdf_end": "585"
+    },
+    {
+      "unit_id": "B2-P0586-0589",
+      "volume": "2권",
+      "dangi_pdf_start": "586",
+      "dangi_pdf_end": "589"
+    },
+    {
+      "unit_id": "B2-P0590-0595",
+      "volume": "2권",
+      "dangi_pdf_start": "590",
+      "dangi_pdf_end": "595"
+    },
+    {
+      "unit_id": "B2-P0596-0599",
+      "volume": "2권",
+      "dangi_pdf_start": "596",
+      "dangi_pdf_end": "599"
+    },
+    {
+      "unit_id": "B2-P0600-0600",
+      "volume": "2권",
+      "dangi_pdf_start": "600",
+      "dangi_pdf_end": "600"
+    },
+    {
+      "unit_id": "B2-P0601-0608",
+      "volume": "2권",
+      "dangi_pdf_start": "601",
+      "dangi_pdf_end": "608"
+    },
+    {
+      "unit_id": "B2-P0609-0611",
+      "volume": "2권",
+      "dangi_pdf_start": "609",
+      "dangi_pdf_end": "611"
+    },
+    {
+      "unit_id": "B2-P0612-0619",
+      "volume": "2권",
+      "dangi_pdf_start": "612",
+      "dangi_pdf_end": "619"
+    },
+    {
+      "unit_id": "B2-P0620-0624",
+      "volume": "2권",
+      "dangi_pdf_start": "620",
+      "dangi_pdf_end": "624"
+    },
+    {
+      "unit_id": "B2-P0625-0632",
+      "volume": "2권",
+      "dangi_pdf_start": "625",
+      "dangi_pdf_end": "632"
+    },
+    {
+      "unit_id": "B2-P0633-0640",
+      "volume": "2권",
+      "dangi_pdf_start": "633",
+      "dangi_pdf_end": "640"
+    },
+    {
+      "unit_id": "B2-P0641-0648",
+      "volume": "2권",
+      "dangi_pdf_start": "641",
+      "dangi_pdf_end": "648"
+    },
+    {
+      "unit_id": "B2-P0649-0650",
+      "volume": "2권",
+      "dangi_pdf_start": "649",
+      "dangi_pdf_end": "650"
+    },
+    {
+      "unit_id": "B2-P0651-0658",
+      "volume": "2권",
+      "dangi_pdf_start": "651",
+      "dangi_pdf_end": "658"
+    },
+    {
+      "unit_id": "B2-P0659-0660",
+      "volume": "2권",
+      "dangi_pdf_start": "659",
+      "dangi_pdf_end": "660"
+    },
+    {
+      "unit_id": "B2-P0661-0668",
+      "volume": "2권",
+      "dangi_pdf_start": "661",
+      "dangi_pdf_end": "668"
+    },
+    {
+      "unit_id": "B2-P0669-0669",
+      "volume": "2권",
+      "dangi_pdf_start": "669",
+      "dangi_pdf_end": "669"
+    },
+    {
+      "unit_id": "B2-P0670-0677",
+      "volume": "2권",
+      "dangi_pdf_start": "670",
+      "dangi_pdf_end": "677"
+    },
+    {
+      "unit_id": "B2-P0678-0685",
+      "volume": "2권",
+      "dangi_pdf_start": "678",
+      "dangi_pdf_end": "685"
+    },
+    {
+      "unit_id": "B2-P0686-0690",
+      "volume": "2권",
+      "dangi_pdf_start": "686",
+      "dangi_pdf_end": "690"
+    },
+    {
+      "unit_id": "B2-P0691-0698",
+      "volume": "2권",
+      "dangi_pdf_start": "691",
+      "dangi_pdf_end": "698"
+    },
+    {
+      "unit_id": "B2-P0699-0700",
+      "volume": "2권",
+      "dangi_pdf_start": "699",
+      "dangi_pdf_end": "700"
+    },
+    {
+      "unit_id": "B2-P0701-0708",
+      "volume": "2권",
+      "dangi_pdf_start": "701",
+      "dangi_pdf_end": "708"
+    },
+    {
+      "unit_id": "B2-P0709-0712",
+      "volume": "2권",
+      "dangi_pdf_start": "709",
+      "dangi_pdf_end": "712"
+    },
+    {
+      "unit_id": "B2-P0713-0720",
+      "volume": "2권",
+      "dangi_pdf_start": "713",
+      "dangi_pdf_end": "720"
+    },
+    {
+      "unit_id": "B2-P0721-0728",
+      "volume": "2권",
+      "dangi_pdf_start": "721",
+      "dangi_pdf_end": "728"
+    },
+    {
+      "unit_id": "B2-P0729-0729",
+      "volume": "2권",
+      "dangi_pdf_start": "729",
+      "dangi_pdf_end": "729"
+    },
+    {
+      "unit_id": "B2-P0730-0737",
+      "volume": "2권",
+      "dangi_pdf_start": "730",
+      "dangi_pdf_end": "737"
+    },
+    {
+      "unit_id": "B2-P0738-0745",
+      "volume": "2권",
+      "dangi_pdf_start": "738",
+      "dangi_pdf_end": "745"
+    },
+    {
+      "unit_id": "B2-P0746-0749",
+      "volume": "2권",
+      "dangi_pdf_start": "746",
+      "dangi_pdf_end": "749"
+    },
+    {
+      "unit_id": "B2-P0750-0750",
+      "volume": "2권",
+      "dangi_pdf_start": "750",
+      "dangi_pdf_end": "750"
+    },
+    {
+      "unit_id": "B2-P0751-0757",
+      "volume": "2권",
+      "dangi_pdf_start": "751",
+      "dangi_pdf_end": "757"
+    },
+    {
+      "unit_id": "B2-P0758-0765",
+      "volume": "2권",
+      "dangi_pdf_start": "758",
+      "dangi_pdf_end": "765"
+    },
+    {
+      "unit_id": "B2-P0766-0769",
+      "volume": "2권",
+      "dangi_pdf_start": "766",
+      "dangi_pdf_end": "769"
+    },
+    {
+      "unit_id": "B2-P0770-0777",
+      "volume": "2권",
+      "dangi_pdf_start": "770",
+      "dangi_pdf_end": "777"
+    },
+    {
+      "unit_id": "B2-P0778-0785",
+      "volume": "2권",
+      "dangi_pdf_start": "778",
+      "dangi_pdf_end": "785"
+    },
+    {
+      "unit_id": "B2-P0786-0793",
+      "volume": "2권",
+      "dangi_pdf_start": "786",
+      "dangi_pdf_end": "793"
+    },
+    {
+      "unit_id": "B2-P0794-0800",
+      "volume": "2권",
+      "dangi_pdf_start": "794",
+      "dangi_pdf_end": "800"
+    },
+    {
+      "unit_id": "B2-P0801-0808",
+      "volume": "2권",
+      "dangi_pdf_start": "801",
+      "dangi_pdf_end": "808"
+    },
+    {
+      "unit_id": "B2-P0809-0816",
+      "volume": "2권",
+      "dangi_pdf_start": "809",
+      "dangi_pdf_end": "816"
+    },
+    {
+      "unit_id": "B2-P0817-0824",
+      "volume": "2권",
+      "dangi_pdf_start": "817",
+      "dangi_pdf_end": "824"
+    },
+    {
+      "unit_id": "B2-P0825-0826",
+      "volume": "2권",
+      "dangi_pdf_start": "825",
+      "dangi_pdf_end": "826"
+    },
+    {
+      "unit_id": "B2-P0827-0830",
+      "volume": "2권",
+      "dangi_pdf_start": "827",
+      "dangi_pdf_end": "830"
+    },
+    {
+      "unit_id": "B2-P0831-0833",
+      "volume": "2권",
+      "dangi_pdf_start": "831",
+      "dangi_pdf_end": "833"
+    },
+    {
+      "unit_id": "B2-P0834-0836",
+      "volume": "2권",
+      "dangi_pdf_start": "834",
+      "dangi_pdf_end": "836"
+    },
+    {
+      "unit_id": "B2-P0837-0843",
+      "volume": "2권",
+      "dangi_pdf_start": "837",
+      "dangi_pdf_end": "843"
+    },
+    {
+      "unit_id": "B2-P0844-0850",
+      "volume": "2권",
+      "dangi_pdf_start": "844",
+      "dangi_pdf_end": "850"
+    },
+    {
+      "unit_id": "B2-P0851-0856",
+      "volume": "2권",
+      "dangi_pdf_start": "851",
+      "dangi_pdf_end": "856"
+    },
+    {
+      "unit_id": "B2-P0857-0862",
+      "volume": "2권",
+      "dangi_pdf_start": "857",
+      "dangi_pdf_end": "862"
+    },
+    {
+      "unit_id": "B2-P0863-0865",
+      "volume": "2권",
+      "dangi_pdf_start": "863",
+      "dangi_pdf_end": "865"
+    },
+    {
+      "unit_id": "B2-P0866-0867",
+      "volume": "2권",
+      "dangi_pdf_start": "866",
+      "dangi_pdf_end": "867"
+    },
+    {
+      "unit_id": "B2-P0868-0872",
+      "volume": "2권",
+      "dangi_pdf_start": "868",
+      "dangi_pdf_end": "872"
+    },
+    {
+      "unit_id": "B2-P0873-0880",
+      "volume": "2권",
+      "dangi_pdf_start": "873",
+      "dangi_pdf_end": "880"
+    }
+  ],
+  "official_problem_keys": [
+    "SRC-CIV-004|민법14054",
+    "SRC-CIV-004|민법19323",
+    "SRC-CIV-004|민법25153",
+    "SRC-CIV-004|민변18045",
+    "SRC-CIV-004|민변22063",
+    "SRC-CIV-004|민변23021",
+    "SRC-CIV-004|민서19153",
+    "SRC-CIV-004|민서20174",
+    "SRC-CIV-004|민승19134",
+    "SRC-CIV-004|민승21151",
+    "SRC-CIV-004|민행18314",
+    "SRC-CIV-004|민행19112",
+    "SRC-CIV-004|민행24362",
+    "SRC-CIV-005|2022-제28회-문1-소문항1",
+    "SRC-CIV-005|2022-제28회-문1-소문항2",
+    "SRC-CIV-005|2022-제28회-문1-소문항3",
+    "SRC-CIV-005|2025-제31회-문1-소문항1",
+    "SRC-CIV-005|2025-제31회-문1-소문항2",
+    "SRC-CIV-005|2025-제31회-문1-소문항3",
+    "SRC-CIV-005|2025-제31회-문1-소문항4",
+    "SRC-CIV-005|2025-제31회-문1-소문항5"
+  ],
+  "unresolved_problem_keys": [
+    "SRC-CIV-005|2025-제31회-문1-소문항2"
+  ]
+}
