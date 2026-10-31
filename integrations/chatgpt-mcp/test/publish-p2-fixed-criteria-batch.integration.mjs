@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {readFile} from "node:fs/promises";
 import pg from "pg";
-import {gradingAad} from "../db/postgres-adapter.mjs";
-import {createP2CriteriaManifest} from "../db/p2-fixed-criteria.mjs";
+import {gradingAad,decryptGradingPayload} from "../db/postgres-adapter.mjs";
+import {createP2CriteriaManifest,validateP2ApprovedSource} from "../db/p2-fixed-criteria.mjs";
 import {p2PublicationDigest} from "../db/publish-p2-fixed-criteria.mjs";
 import {publishP2FixedCriteriaBatch} from "../db/publish-p2-fixed-criteria-batch.mjs";
 const url=new URL(process.env.TEST_DATABASE_URL||"http://invalid");
@@ -39,6 +39,28 @@ try{
         criteriaDigest:manifest.criteriaDigest,originalPayloadDigest:hash(plain),problemDigest:hash(prompt),
         decisionRubricDigest:p2PublicationDigest(decisionRubric),reviewEvidenceDigest:p2PublicationDigest(reviewEvidence)}});
   }
+  // Synthetic execution receipts exercise persistence/binding only. They are NOT
+  // evidence that a real model ran or that any legal rubric passed quality review.
+  const caseScope={subjectId:'CIVIL',caseId:'synthetic-complete-case',commonFactsDigest:hash('synthetic-common-facts'),
+    bindings:inputs.map(i=>({stableKey:i.stableKey,problemVersionId:i.expectedProblemVersionId,
+      promptDigest:i.expectedProblemDigest,sourceDigest:i.expectedPayloadDigest,
+      criteriaDigest:i.manifest.criteriaDigest,decisionRubricDigest:p2PublicationDigest(i.decisionRubric)}))};
+  const scopeDigest=p2PublicationDigest(caseScope),testSuiteDigest=hash('synthetic-independent-test-suite');
+  const registry=[{runId:'synthetic-execution-receipt',modelId:'synthetic-model-not-executed',executedAt:'2026-01-01T00:00:00.000Z',
+    actualInvocation:true,scopeDigest,testSuiteDigest,requestDigest:hash('synthetic-request'),responseDigest:hash('synthetic-response'),
+    resultDigest:hash('synthetic-result'),passed:true,testCount:9,failureCount:0,
+    coverage:{full:3,equivalent:3,partial:1,wrong:1,abstain:1}}];
+  const caseEvidence={schemaVersion:1,...caseScope,generatorId:'synthetic-generator',audit:{reviewerId:'synthetic-independent-reviewer',
+    scopeDigest,artifactDigest:hash('synthetic-case-audit'),completeCaseReviewed:true,approved:true,
+    ambiguityCount:0,missingMeaningCount:0,unsupportedElementCount:0,duplicateCount:0},
+    benchmark:{scopeDigest,testSuiteDigest,receipts:registry}};
+  for(const input of inputs){
+    input.caseValidationEvidence=structuredClone(caseEvidence);
+    input.caseValidationScope=structuredClone({...caseScope,generatorId:'synthetic-generator',reviewerId:'synthetic-independent-reviewer',
+      auditArtifactDigest:hash('synthetic-case-audit'),testSuiteDigest,receipts:registry});
+    input.approvalEvidence.caseValidationDigest=p2PublicationDigest(caseEvidence);
+    input.approvalEvidence.reviewEvidenceDigest=p2PublicationDigest({...input.reviewEvidence,caseValidationEvidence:caseEvidence});
+  }
   const snapshot=async client=>{
     const state={};
     for(const table of ["problems","problem_versions","source_documents","document_revisions","issue_sets","issue_set_items","original_answers","p2_grades"]){
@@ -48,6 +70,13 @@ try{
     return state;
   };
   const before=await snapshot(pool);
+  const invalidInputs=structuredClone(inputs);
+  invalidInputs[7].decisionRubric.elements[0].partialCondition='Changed after case audit';
+  await assert.rejects(publishP2FixedCriteriaBatch(pool,invalidInputs,{...options,dryRun:false,invariantSnapshot:snapshot}),/complete-case item binding mismatch/);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM private_grading_keys")).rows[0].n,8);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events")).rows[0].n,0);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM private_grading_keys WHERE active_for_grading=true AND key_version='v1'")).rows[0].n,8);
+  assert.deepEqual(await snapshot(pool),before);
   const dry=await publishP2FixedCriteriaBatch(pool,inputs,{...options,invariantSnapshot:snapshot});
   assert.equal(dry.dryRun,true);assert.equal(dry.inserted,0);
   let attemptedAudits=0;
@@ -71,6 +100,15 @@ try{
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM private_grading_keys WHERE active_for_grading=true")).rows[0].n,8);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_events")).rows[0].n,8);
   assert.deepEqual(await snapshot(pool),before);
+  const stored=(await pool.query("SELECT stable_key,key_version,payload_digest,encrypted_payload FROM private_grading_keys WHERE active_for_grading=true ORDER BY stable_key")).rows;
+  for(const row of stored){
+    const input=inputs.find(i=>i.stableKey===row.stable_key);
+    const decoded=decryptGradingPayload(row.encrypted_payload,encryptionKey,gradingAad('CIVIL',row.stable_key,row.key_version,encryptionKeyId),row.payload_digest);
+    assert.deepEqual(decoded.fixedCriteriaReviewEvidence.caseValidationEvidence,caseEvidence);
+    assert.equal(decoded.fixedCriteriaApproval.caseValidationDigest,p2PublicationDigest(caseEvidence));
+    validateP2ApprovedSource(decoded,{problemVersionId:input.expectedProblemVersionId,problemDigest:input.expectedProblemDigest});
+  }
   console.log(JSON.stringify({ok:true,dryRunNoWrites:true,eighthItemFailureRolledBackAll:true,
-    invariantFailureRolledBackAll:true,reverseOrderConcurrentReplay:true,inserted:8,active:8,protectedSnapshotsPreserved:true}));
+    invariantFailureRolledBackAll:true,reverseOrderConcurrentReplay:true,inserted:8,active:8,protectedSnapshotsPreserved:true,
+    completeCaseEvidenceEncryptedRoundtrip:stored.length,decisionDriftCommittedWrites:0,modelReceiptsSynthetic:true,realModelQualityVerified:false}));
 }finally{encryptionKey.fill(0);await pool.end();}
