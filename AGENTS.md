@@ -1,16 +1,32 @@
-# Official civil exam integration
+# 개발 에이전트 규칙 — 범위 동결·완료 우선
 
-## Scope
-- Support official P1/P2 issue, submission, grading, immutable history and exam progress; WorkOS, PostgreSQL and guarded Google Docs sync. Do not develop concept lessons, recall, concept progress or study modes. Preserve existing concept tables and records.
-- Read `PROJECT_INSTRUCTIONS.md` and `docs/exam-only-integration.md`. Current user decisions override older audits. Sheets controls must remain available to users through PostgreSQL: range/type/count/cases, year/session/question/stable key, unattempted/incorrect/low score/due/source change, active-set exclusion and problem progress. Do not clone old Sheet seed or cell formulas.
-- Keep operating Google Sheets, Docs and Apps Script read-only; do not change Docs authoring format. Do not create new infrastructure, credentials or paid services.
+> 사용자 결정 반영: 2026-10-31. 이 저장소에서는 기능 수를 늘리는 것보다 이미 승인된 공식 문제 출제·채점·기록을 실제로 사용할 수 있게 마무리한다.
 
-## Parallel work
-- For substantial independent work, delegate exam selection, P2 grading and Docs sync to agents. Keep edits disjoint; coordinate shared adapter/server/route changes through the parent. Do not run concurrent writes to the same Railway DB or Git branch.
-- Parent checks agent results, runs integrated tests and security scans, and commits/pushes safe code including labeled WIP. Confirm remote SHA. Avoid repeating already verified work.
+## 1. 변경할 수 없는 작업 원칙
+- 작업 시작 시 이 파일, `PROJECT_INSTRUCTIONS.md`, `START.md`를 읽는다. 현재 작업 브랜치는 PR #5의 `integration/civil-exam-only`다. 최신 원격 HEAD와 관련 증거만 확인하며 과거 인수인계를 처음부터 반복하지 않는다.
+- 이 범위 동결 결정은 과거 문서·PR 설명·에이전트 지침의 포괄적인 기능 추가/병렬 개발 지시보다 우선한다. 사용자 명시적 변경 승인 없이는 에이전트가 범위나 완료 기준을 늘리지 않는다. 보안·데이터 보존 의무는 완화하지 않는다.
+- 한 작업은 하나의 실제 차단 원인을 해결하는 최소 변경으로 한정한다. 시작 전에 목표, 허용 변경 파일/영역, 완료 증거를 짧게 정한다. 필요성이 입증되지 않은 재설계·전면 리팩터링·범용화·새 프레임워크/서비스 도입을 하지 않는다.
+- 새로 발견한 개선 아이디어는 현재 작업의 필수 조건으로 승격하지 않는다. 기존 보고서나 백로그에 보류 사유만 남긴다. 기본서·Graphify/RAG·타 과목·개념 강의·백지복습·새 학습 모드는 별도 범위 승인 전 개발하거나 연결하지 않는다.
+- 범위 확대에는 대상 기능, 현재 완료에 필요한 이유, 가장 작은 대안, 영향 범위에 대한 사용자의 명시적 승인이 필요하다. 일반적인 '계속', '개선', '완성' 지시를 신규 제품/인프라 승인으로 해석하지 않는다. 이미 승인된 범위 내의 안전한 최소 수정마다 승인을 반복 요청하지도 않는다.
+- 현재 완료 조건을 충족하면 결과를 보고하고 멈춘다. 다음 기능·새 실험·추가 최적화를 자동 착수하지 않는다.
 
-## Release and safety
-- Preserve stable problem keys, versions, original answers, encrypted grading keys and past scores. No secrets, private keys, personal answers, DB dumps or full copyrighted problem text in GitHub/logs.
-- P2: persist submitted originals before rubric access. Official model-answer elements score 1/0.5/0 for match/partial/missing or error; seven diagnostics stay separate. Omitted subquestions are not answered attempts. Never label AI learning points as official examiner marks.
-- Docs: 11 unresolved content differences stay quarantined. Only approved synthetic NEW/MODIFIED changes may be applied in isolated tests; check version preservation, idempotence and rollback. New items without verified private grading keys stay unpublished.
-- Before PR #5 merge, verify every required user function, isolated DB and authenticated ChatGPT P1/P2 calls, security and history parity. PR #1/#2/#3/#4 stay separate; no wholesale merge. Main merge and operating DB cutover are separate; cutover requires separate user approval.
+## 2. 완료 판정과 증거
+- 기능별 사용 가능 판정과 PR 전체 병합/운영 전환을 분리한다. 민법 1차의 출제→실제 원답→정답 대조→기록 재조회가 안전하게 작동하는지 먼저 확정한다. 2차·문서 자동화의 미완료를 이유로 1차 결과까지 미완료로 되돌리지 않는다.
+- 단, 공통 인증/소유권 결함, 정답 누출, 이력 손상, 중복 기록 등 실제 공통 위험은 해당 기능도 차단한다. 작은 버전이라는 이유로 필수 안전 검사를 생략하지 않는다.
+- 상태는 `PASS(실행 증거)` / `FAIL` / `미실행` / `보류`로 구분한다. 과거 보고서만 읽었다면 '기록상 PASS, 이번 실호출 미실행'으로 표시한다. SHA·환경·호출/시험·결과를 연결하고 코드 존재, 배포 성공, AI 설명을 실사용 성공으로 대체하지 않는다.
+- 이전 PASS는 관련 코드·환경·기준 변경이나 회귀 의심이 있을 때 필요한 부분만 다시 확인한다. 실제 고장과 무관한 재설치·재로그인·재배포를 반복 요구하지 않는다. 실패 계층과 근거를 먼저 좁힌다.
+- 수정 영향에 맞는 시험을 실행하고 기존 필수 CI와 병합 안전조건을 유지한다. 문서만 바꾼 작업을 이유로 실데이터 출제·채점·전체 이관·운영 재설정을 수행하지 않는다. 실행하지 않은 테스트는 통과라고 쓰지 않는다.
+
+## 3. 실행·협업 제한
+- 기본은 단일 작업 담당자다. 병렬 에이전트는 이미 승인된 같은 작업의 독립된 부분에만 한정하고 각자 목표·변경 파일·종료 조건을 고정한다. 에이전트가 자기 업무를 만들거나 새 범위를 승인하지 못한다.
+- 공유 adapter/server/route 변경은 부모 담당자가 조정한다. 같은 Git 브랜치·Railway DB에 동시 쓰기를 하지 않는다. 최신 원격 변경을 확인하고 다른 작업을 덮어쓰거나 강제 push하지 않는다.
+- 종료 보고는 목표 달성 여부, 실제 변경 파일, 실행한 시험/호출 증거, 남은 차단 원인, 보류 사항만 간결하게 제시한다. 근거 없는 완성률, 테스트 개수나 코드량을 사용자 기능 완성의 대리 지표로 쓰지 않는다.
+
+## 4. 기존 안전 계약 유지
+- WorkOS 사용자 소유권 검증, 원답 불변, 같은 요청 멱등성, 다른 답 재제출 거부, 트랜잭션 롤백을 유지한다. 일상 출제·채점은 PostgreSQL만 사용한다.
+- 기존 문제 안정키·버전·원답·암호화 채점키·점수·개념 테이블과 기록을 보존한다. 비밀값, 개인 답안, DB 덤프, 전체 비공개 모범답안/저작물 원문을 GitHub·로그·채팅에 노출하지 않는다.
+- 2차는 실제 원답 저장 후 해당 세트의 공식 기준만 조회한다. 필수 의미요소의 1/0.5/0 비율 점수와 7요소 진단을 분리한다. 미제출 소문항을 풀이로 세지 않고 AI 학습점수를 공식 채점자 점수라고 부르지 않는다.
+- 2차 의미 판정 검증과 승인된 기준 공급이 부족하면 확정 기록 게이트를 닫아 둔다. 검증/명시적 승인 없는 게이트 활성화·채점키 발행은 금지한다. 한정된 샘플 통과를 전체 정확성으로 일반화하지 않는다.
+- 운영 Sheets/Docs/Apps Script 및 기존 Production은 승인 없이 변경하지 않는다. Docs 작성 형식을 바꾸지 않고 미승인 차이 11건은 보류한다. 합성 시험 3문항은 비공개 유지하며 공식 문항으로 발행/채점하지 않는다. 다른 합성 시험도 승인된 격리 환경에 한정한다.
+- PR #1~#4 일괄 병합 금지. PR #5 병합과 운영 전환은 서로 다른 승인 행위다. 기존 병합 조건을 임의로 면제하지 않으며 단계별 완료 판정은 병합·배포·운영 DB 전환의 허가가 아니다. 자동배포 영향과 최신 사용자 승인을 확인한다.
+- 새 인프라·자격증명·유료 서비스·권한 확대는 별도 승인 없이 만들거나 적용하지 않는다. 기본서 연결은 승인되더라도 출제·채점키·풀이이력을 바꾸지 않는 별도 읽기 전용 실험부터 검토한다.
