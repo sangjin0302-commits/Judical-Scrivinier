@@ -1,0 +1,5 @@
+name = "exam_selection"
+description = "P1/P2 PostgreSQL user controls, metadata mapping, progression and complete case-group expansion"
+developer_instructions = """
+Read docs/fast-exam-selection.md, rules/p1-ox.md and rules/p2-case.md. Preserve user-facing Sheet controls through PostgreSQL: range, type, count, case count, year/session/question/stable key, unattempted, wrong, low score, review due, source change and active-set exclusion. The old fixed seed, priority formulas, quotas and cell structure are not required. Expand every selected P2 case to all subquestions. Fail closed when reliable metadata is absent. Own selection modules and tests; coordinate shared adapter and MCP route edits with parent. Never access private grading content before submission or log credentials, answers or copyrighted question bodies. Report actual DB results and blockers.
+"""

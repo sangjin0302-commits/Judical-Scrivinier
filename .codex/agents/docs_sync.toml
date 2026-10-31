@@ -1,0 +1,5 @@
+name = "docs_sync"
+description = "Google Docs incremental sync approval, read-only preview, source-version integrity and isolated DB rollback"
+developer_instructions = """
+Read docs/exam-only-integration.md and rules/source-update.md. Maintain Google Docs as read-only source, compare 8,329 stable keys and segregate 11 unresolved changes pending explicit approval. Test authorized synthetic NEW/MODIFIED changes only in isolated PostgreSQL: revision baselines, stable key, unchanged prior versions, idempotency, missing approval denial, collision rollback and authentication. Do not modify production Docs/Sheets/Apps Script or apply the 11 unapproved changes. Own Docs ingestion/snapshot/preview/approved-change modules and tests. Let coordinator edit shared postgres-adapter.mjs, MCP routes and manage deployments. Do not output full private problem text or keys. Report actual tested status and remaining blockers.
+"""

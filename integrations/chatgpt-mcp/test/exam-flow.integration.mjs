@@ -1,0 +1,331 @@
+// Disposable localhost PostgreSQL only. Never point at Railway or user data.
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+import pg from "pg";
+
+import { createPostgresExecutor, gradingAad } from "../db/postgres-adapter.mjs";
+import { createP2CriteriaManifest } from "../db/p2-fixed-criteria.mjs";
+import { p2PublicationDigest } from "../db/publish-p2-fixed-criteria.mjs";
+import { p2ScoreBasisDigest } from "../db/p2-score-basis.mjs";
+
+const url = process.env.TEST_DATABASE_URL;
+if (!url) throw new Error("TEST_DATABASE_URL required");
+const target = new URL(url);
+if (!["127.0.0.1", "localhost"].includes(target.hostname) || target.port !== "55432" ||
+    !/^exam_flow_[a-z0-9_]+$/i.test(target.pathname.slice(1))) {
+  throw new Error("integration test requires disposable localhost exam_flow_* database");
+}
+
+const pool = new pg.Pool({ connectionString: url, max: 2 });
+const encryptionKey = crypto.randomBytes(32);
+const keyId = "synthetic-flow-key";
+const ownerId = "synthetic-workos-user";
+const p1Keys = ["SRC-CIV-004|SYNTH-FLOW-1", "SRC-CIV-004|SYNTH-FLOW-2"];
+const p2Keys = ["SRC-CIV-005|2025-제1회-문8-소문항1", "SRC-CIV-005|2025-제1회-문8-소문항2"];
+const migration = (name) => readFile(new URL(`../db/migrations/${name}`, import.meta.url), "utf8");
+const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+
+function encryptedKey(stableKey, payload, keyVersion = "v1") {
+  const text = JSON.stringify(payload);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey, iv);
+  cipher.setAAD(gradingAad("CIVIL", stableKey, keyVersion, keyId));
+  const body = Buffer.concat([cipher.update(text), cipher.final()]);
+  return { encrypted: Buffer.concat([iv, cipher.getAuthTag(), body]), payloadDigest: digest(text) };
+}
+
+async function addProblem(stableKey, stage, sourceOrder, answer, maxPoints = null) {
+  const prompt = `Synthetic ${stage} ${sourceOrder}`;
+  await pool.query(`INSERT INTO problems(subject_id,stable_key,stage,source_order,source_ref,
+    source_version,prompt_text,max_points,published,content_digest)
+    VALUES('CIVIL',$1,$2,$3,'synthetic','v1',$4,$5,true,$6)`,
+  [stableKey, stage, sourceOrder, prompt, maxPoints, digest(stableKey)]);
+  const version = await pool.query(`INSERT INTO problem_versions(subject_id,stable_key,
+    source_document_id,source_revision_id,source_version,stage,source_order,prompt_text,
+    max_points,prompt_digest) VALUES('CIVIL',$1,'synthetic-doc','r1','v1',$2,$3,$4,$5,$6)
+    RETURNING version_id`, [stableKey, stage, sourceOrder, prompt, maxPoints, digest(prompt)]);
+  await pool.query(`UPDATE problems SET current_problem_version_id=$1
+    WHERE subject_id='CIVIL' AND stable_key=$2`, [version.rows[0].version_id, stableKey]);
+  const { encrypted, payloadDigest } = encryptedKey(stableKey, { answer,
+    rubric: "요건과 결론을 확인한다.", rationale: "합성 시험 전용" });
+  await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
+    encrypted_payload,payload_digest,encryption_key_id,verification_state,active_for_grading)
+    VALUES('CIVIL',$1,'v1',$2,$3,$4,'verified',true)`,
+  [stableKey, encrypted, payloadDigest, keyId]);
+}
+
+const semantic = (answerExcerpt, status) => ({
+  elements: [{ category: "ELEMENT", criterion: "요건", status,
+    modelExcerpt: "요건", ...(answerExcerpt ? { answerExcerpt } : {}),
+    explanation: status === "MISSING" ? "원답에 요건 없음" : "원답에 요건 있음" }],
+  matchedLaw: status === "MISSING" ? [] : ["요건"],
+  missingLaw: status === "MISSING" ? ["요건"] : [], misappliedLaw: [],
+  improvement: "요건과 결론을 분명히 적는다", decompositionRationale: "모범답안의 요건을 한 요소로 추출",
+  scoreRationale: "필수 의미요소 비율로 계산",
+});
+const scores = (value) => Object.fromEntries(
+  ["issue", "outline", "law", "precedent", "application", "conclusion", "expression"]
+    .map((name) => [name, value]));
+const summary = (values) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  const percentile = (rate) => Number(sorted[Math.ceil(sorted.length * rate) - 1].toFixed(3));
+  return { count: sorted.length, p50Ms: percentile(0.5), p95Ms: percentile(0.95) };
+};
+
+try {
+  const existing = await pool.query("SELECT to_regclass('public.problems') AS problems");
+  if (existing.rows[0].problems) throw new Error("disposable database must be empty");
+  for (const name of ["0001_learning_ledger.sql", "0002_grading_key_rotation.sql",
+    "0004_google_docs_sync.sql", "0008_exam_selection_indexes.sql", "0009_exam_review_due.sql"]) {
+    await pool.query(await migration(name));
+  }
+  await pool.query("INSERT INTO subjects(subject_id,name) VALUES('CIVIL','Synthetic civil')");
+  await pool.query(`INSERT INTO source_documents(document_id,subject_id,title)
+    VALUES('synthetic-doc','CIVIL','Synthetic isolated document')`);
+  await pool.query(`INSERT INTO document_revisions(document_id,revision_id,content_digest,
+    parser_version,parsed_problem_count)
+    VALUES('synthetic-doc','r1','synthetic-digest','test-v1',4)`);
+  await addProblem(p1Keys[0], "P1", 1, "O");
+  await addProblem(p1Keys[1], "P1", 2, "X");
+  await addProblem(p2Keys[0], "P2", 3, "요건을 충족한다.", 15);
+  await addProblem(p2Keys[1], "P2", 4, "요건을 충족한다.", 15);
+  const execute = createPostgresExecutor({ pool, env: {
+    GRADING_KEY_BASE64: encryptionKey.toString("base64"), GRADING_ENCRYPTION_KEY_ID: keyId,
+    P2_GRADE_COMMIT_ENABLED: "true",
+  } });
+  const context = { ownerId };
+  const strictExecute = createPostgresExecutor({ pool, env: {
+    GRADING_KEY_BASE64: encryptionKey.toString("base64"), GRADING_ENCRYPTION_KEY_ID: keyId,
+    P2_GRADE_COMMIT_ENABLED: "true", P2_GRADE_REQUIRE_FIXED_CRITERIA: "true",
+  } });
+  const p1 = await execute("issueCivilP1", { requestId: "synthetic-p1-1", mode: "문제지정",
+    count: 2, specificKeys: p1Keys }, context);
+  assert.equal(p1.count, 2);
+  assert.deepEqual(p1.questions.map((item) => item.key), p1Keys);
+  assert.equal(JSON.stringify(p1).includes("요건을 충족한다"), false);
+  const p1Grade = await execute("gradeCivilP1", { setId: p1.setId, answers: ["O", "X"] }, context);
+  assert.equal(p1Grade.correct, 2);
+  assert.equal((await execute("gradeCivilP1", { setId: p1.setId, answers: ["O", "X"] }, context)).replayed, true);
+  await assert.rejects(execute("gradeCivilP1", { setId: p1.setId, answers: ["X", "X"] }, context),
+    /changed answer payload rejected/);
+  await assert.rejects(execute("gradeCivilP1", { setId: p1.setId, answers: ["O", "X"] },
+    { ownerId: "another-user" }), /ownership denied/);
+
+  const p2 = await execute("issueCivilP2", { requestId: "synthetic-p2-1", mode: "문제지정",
+    caseCount: 1, specificKeys: [p2Keys[0]] }, context);
+  assert.equal(p2.caseCount, 1);
+  assert.deepEqual(p2.questions.map((item) => item.key), p2Keys);
+  const answers = [{ key: p2Keys[0], text: "요건을 충족한다." }];
+  const prepared = await execute("prepareCivilP2Grade", { setId: p2.setId, answers }, context);
+  assert.equal(prepared.rubrics.length, 2);
+  assert.deepEqual(prepared.subquestions.map((item) => item.submissionStatus),
+    ["SUBMITTED", "UNSUBMITTED"]);
+  assert.equal((await execute("prepareCivilP2Grade", { setId: p2.setId, answers }, context)).replayed, true);
+  await assert.rejects(execute("prepareCivilP2Grade", { setId: p2.setId,
+    answers: [{ ...answers[0], text: "changed" }] }, context), /changed answer payload rejected/);
+  const evaluations = [{ key: p2Keys[0], maxPoints: 15, scores: scores(1),
+    errorType: "none", checkType: "synthetic", nextReview: "none",
+    semanticAnalysis: semantic("요건을 충족한다.", "MATCH") },
+  { key: p2Keys[1], maxPoints: 15, scores: scores(0),
+    errorType: "none", checkType: "synthetic", nextReview: "none",
+    semanticAnalysis: semantic("", "MISSING") }];
+  await assert.rejects(strictExecute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context),
+    /fixed criteria manifest required/);
+  const legacyPending = await pool.query("SELECT state FROM submissions WHERE set_id=$1", [p2.setId]);
+  assert.equal(legacyPending.rows[0].state, "PREPARED");
+  const committed = await execute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context);
+  assert.equal((await strictExecute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context)).replayed, true);
+  assert.deepEqual(committed.summaries.map((item) => item.awardedPoints), [15, 0]);
+  assert.equal((await execute("commitCivilP2Grade", { setId: p2.setId, evaluations }, context)).replayed, true);
+  await assert.rejects(execute("commitCivilP2Grade", { setId: p2.setId,
+    evaluations: [{ ...evaluations[0], awardedPoints: 0 }, evaluations[1]] }, context),
+  /changed evaluation payload rejected/);
+  const originals = await pool.query("SELECT count(*)::int AS n FROM original_answers");
+  const grades = await pool.query("SELECT count(*)::int AS n FROM p2_grades");
+  assert.equal(originals.rows[0].n, 3);
+  assert.equal(grades.rows[0].n, 2);
+  const initialDue = await pool.query(`SELECT stable_key FROM exam_review_due
+    WHERE owner_id=$1 AND stable_key=ANY($2::text[]) ORDER BY stable_key`, [ownerId, p2Keys]);
+  assert.deepEqual(initialDue.rows.map((item) => item.stable_key), [p2Keys[0]]);
+  const timings = { p1Issue: [], p1Grade: [], p2Issue: [], p2Prepare: [], p2Commit: [] };
+  for (let index = 0; index < 12; index++) {
+    let start = performance.now();
+    const p1Sample = await execute("issueCivilP1", { requestId: `bench-p1-${index}`,
+      mode: "문제지정", count: 2, specificKeys: p1Keys }, context);
+    timings.p1Issue.push(performance.now() - start);
+    start = performance.now();
+    await execute("gradeCivilP1", { setId: p1Sample.setId, answers: ["O", "X"] }, context);
+    timings.p1Grade.push(performance.now() - start);
+    start = performance.now();
+    const p2Sample = await execute("issueCivilP2", { requestId: `bench-p2-${index}`,
+      mode: "문제지정", caseCount: 1, specificKeys: [p2Keys[0]] }, context);
+    timings.p2Issue.push(performance.now() - start);
+    start = performance.now();
+    await execute("prepareCivilP2Grade", { setId: p2Sample.setId, answers }, context);
+    timings.p2Prepare.push(performance.now() - start);
+    start = performance.now();
+    await execute("commitCivilP2Grade", { setId: p2Sample.setId, evaluations }, context);
+    timings.p2Commit.push(performance.now() - start);
+  }
+  const finalDue = await pool.query(`SELECT stable_key FROM exam_review_due
+    WHERE owner_id=$1 AND stable_key=ANY($2::text[]) ORDER BY stable_key`, [ownerId, p2Keys]);
+  assert.deepEqual(finalDue.rows.map((item) => item.stable_key), [p2Keys[0]]);
+  // Different request IDs for one owner must still serialize active allocation.
+  // The two-connection pool allows both transactions to run concurrently.
+  const concurrentContext = { ownerId: "synthetic-concurrent-owner" };
+  const concurrentInputs = ["concurrent-p1-a", "concurrent-p1-b"].map((requestId) =>
+    ({ requestId, mode: "전범위", count: 1 }));
+  const concurrentSets = await Promise.all(concurrentInputs.map((input) =>
+    execute("issueCivilP1", input, concurrentContext)));
+  assert.equal(concurrentSets.length, 2);
+  assert.notEqual(concurrentSets[0].setId, concurrentSets[1].setId);
+  assert.ok(concurrentSets.every((set) => set.count === 1 && set.questions.length === 1));
+  assert.deepEqual(concurrentSets.flatMap((set) => set.questions.map((item) => item.key)).sort(),
+    [...p1Keys].sort(), "concurrent active sets must contain different problems");
+  const replayedConcurrentSets = await Promise.all(concurrentInputs.map((input) =>
+    execute("issueCivilP1", input, concurrentContext)));
+  assert.deepEqual(replayedConcurrentSets.map((set) => set.setId),
+    concurrentSets.map((set) => set.setId), "concurrent allocation retries retain their sets");
+  // Append a new synthetic key version; a pre-existing set must keep v1.
+  const oldContext = { ownerId: "synthetic-old-snapshot" };
+  const oldSet = await execute("issueCivilP2", { requestId: "old-snapshot",
+    mode: "문제지정", specificKeys: [p2Keys[0]] }, oldContext);
+  await execute("prepareCivilP2Grade", { setId: oldSet.setId, answers }, oldContext);
+  const fixedSource = { answer: "요건과 결론을 확인한다.", rubric: "요건과 결론을 확인한다." };
+  const fixedCriteriaManifest = createP2CriteriaManifest([
+    { category: "ELEMENT", criterion: "요건", modelExcerpt: "요건" },
+    { category: "CONCLUSION", criterion: "결론", modelExcerpt: "결론" },
+  ], { modelAnswer: fixedSource.answer, rubric: fixedSource.rubric });
+  const fixedDecisionRubric = { elements: fixedCriteriaManifest.requiredElements.map(element => ({ ...element,
+    explanation: "Synthetic criterion", requiredPropositions: [element.criterion],
+    matchCondition: "Full synthetic meaning", partialCondition: "Partial synthetic meaning",
+    errorCondition: "Contradiction", missingCondition: "Absent" })),
+    decompositionRationale: "Synthetic independent criteria", changesFromPrevious: "", unresolvedAmbiguities: [] };
+  for (const stableKey of p2Keys) {
+    const binding = await pool.query(`SELECT v.version_id,v.prompt_digest,k.payload_digest
+      FROM problems p JOIN problem_versions v ON v.version_id=p.current_problem_version_id
+      JOIN private_grading_keys k ON k.subject_id=p.subject_id AND k.stable_key=p.stable_key
+      WHERE p.stable_key=$1 AND k.key_version='v1'`, [stableKey]);
+    const fixedCriteriaReviewEvidence = { sourceOnly: true, learnerAnswersProvidedToRubricReview: false,
+      duplicateGroups: 0, unsupportedElements: 0, requiresRevision: false,
+      criteriaFile: "synthetic", criteriaFileDigest: digest("criteria"),
+      auditFile: "synthetic", auditFileDigest: digest("audit") };
+    const fixedCriteriaApproval = { reviewId: "synthetic", reviewerId: "synthetic-agent",
+      reviewedAt: "2026-01-01T00:00:00Z", originalKeyVersion: "v1", originalEncryptionKeyId: keyId,
+      originalPayloadDigest: binding.rows[0].payload_digest, problemVersionId: binding.rows[0].version_id,
+      problemDigest: binding.rows[0].prompt_digest, criteriaDigest: fixedCriteriaManifest.criteriaDigest,
+      decisionRubricDigest: p2PublicationDigest(fixedDecisionRubric),
+      reviewEvidenceDigest: p2PublicationDigest(fixedCriteriaReviewEvidence) };
+    const { encrypted, payloadDigest } = encryptedKey(stableKey,
+      { ...fixedSource, fixedCriteriaManifest, fixedDecisionRubric, fixedCriteriaReviewEvidence,
+        fixedCriteriaApproval }, "v2-fixed");
+    await pool.query(`UPDATE private_grading_keys SET active_for_grading=false
+      WHERE subject_id='CIVIL' AND stable_key=$1`, [stableKey]);
+    await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
+      encrypted_payload,payload_digest,encryption_key_id,verification_state,active_for_grading)
+      VALUES('CIVIL',$1,'v2-fixed',$2,$3,$4,'verified',true)`,
+      [stableKey, encrypted, payloadDigest, keyId]);
+  }
+  const oldReplay = await execute("prepareCivilP2Grade", { setId: oldSet.setId, answers }, oldContext);
+  assert.ok(oldReplay.rubrics.every(item => !Object.hasOwn(item, "fixedCriteriaManifest")));
+  const oldCommitted = await execute("commitCivilP2Grade", { setId: oldSet.setId, evaluations }, oldContext);
+  assert.deepEqual(oldCommitted.summaries.map(item => item.awardedPoints), [15, 0]);
+  const oldSnapshot = await pool.query("SELECT key_version FROM issue_set_items WHERE set_id=$1", [oldSet.setId]);
+  assert.ok(oldSnapshot.rows.every(item => item.key_version === "v1"));
+
+  const fixedContext = { ownerId: "synthetic-fixed-criteria" };
+  const fixedSet = await execute("issueCivilP2", { requestId: "fixed-snapshot",
+    mode: "문제지정", specificKeys: [p2Keys[0]] }, fixedContext);
+  const fixedPrepared = await execute("prepareCivilP2Grade", { setId: fixedSet.setId, answers }, fixedContext);
+  assert.ok(fixedPrepared.rubrics.every(item => item.fixedCriteriaManifest.criteriaDigest === fixedCriteriaManifest.criteriaDigest));
+  assert.ok(fixedPrepared.rubrics.every(item => JSON.stringify(item.fixedDecisionRubric) === JSON.stringify(fixedDecisionRubric)));
+  // A caller-supplied reduced manifest cannot replace the server's two-element set.
+  const forged = evaluations.map(item => ({ ...item, fixedCriteriaManifest:
+    createP2CriteriaManifest(item.semanticAnalysis.elements,
+      { modelAnswer: fixedSource.answer, rubric: fixedSource.rubric }) }));
+  await assert.rejects(execute("commitCivilP2Grade", { setId: fixedSet.setId,
+    evaluations: forged }, fixedContext), /differ from fixed manifest/);
+  const rejectedState = await pool.query(`SELECT s.state,
+    (SELECT count(*)::int FROM p2_grades g WHERE g.submission_id=s.submission_id) AS grades,
+    (SELECT count(*)::int FROM original_answers oa WHERE oa.submission_id=s.submission_id) AS originals
+    FROM submissions s WHERE s.set_id=$1`, [fixedSet.setId]);
+  assert.deepEqual(rejectedState.rows[0], { state: "PREPARED", grades: 0, originals: 1 });
+  const fixedEvaluations = evaluations.map(item => ({ ...item, semanticAnalysis: {
+    ...item.semanticAnalysis, elements: [...item.semanticAnalysis.elements,
+      { category: "CONCLUSION", criterion: "결론", modelExcerpt: "결론", status: "MISSING",
+        explanation: "원답에 결론 없음" }] } }));
+  const fixedCommitted = await strictExecute("commitCivilP2Grade", { setId: fixedSet.setId,
+    evaluations: fixedEvaluations }, fixedContext);
+  assert.deepEqual(fixedCommitted.summaries.map(item => item.awardedPoints), [7.5, 0]);
+  assert.equal((await execute("commitCivilP2Grade", { setId: fixedSet.setId,
+    evaluations: fixedEvaluations }, fixedContext)).replayed, true);
+  const fixedStored = await pool.query(`SELECT g.evaluation_payload FROM p2_grades g
+    JOIN submissions s ON s.submission_id=g.submission_id WHERE s.set_id=$1`, [fixedSet.setId]);
+  assert.ok(fixedStored.rows.every(item => item.evaluation_payload.semanticAudit.fixedCriteria.criteriaDigest === fixedCriteriaManifest.criteriaDigest));
+  // New learning allocation versions must not rewrite historical maxima or grades.
+  for (const stableKey of p2Keys) {
+    const current = (await pool.query("SELECT prompt_text FROM problems WHERE stable_key=$1",[stableKey])).rows[0];
+    const version = { version_id: crypto.randomUUID(), prompt_digest: digest(current.prompt_text) };
+    const basis = { schemaVersion: 1, mode: "allocated_learning", approvalStatus: "approved",
+      approvalId: "synthetic-source-approval", allocationApprovalId: "synthetic-user-approval",
+      allocationPolicy: "synthetic-equal-halves", sourceGroupKey: "synthetic-score-group",
+      originalGroupMaximum: 15, allocatedLearningMaximum: 7.5, problemVersionId: version.version_id,
+      promptDigest: version.prompt_digest, evidenceDigest: digest("synthetic-public-source") };
+    await pool.query(`INSERT INTO problem_versions(version_id,subject_id,stable_key,
+      source_document_id,source_revision_id,source_version,stage,source_order,prompt_text,max_points,prompt_digest,selection_metadata)
+      SELECT $2,subject_id,stable_key,'synthetic-doc','r1','v3-allocation',stage,source_order,
+        prompt_text,7.5,$3,$4::jsonb FROM problems WHERE stable_key=$1`,
+      [stableKey,version.version_id,version.prompt_digest,JSON.stringify({scoreBasis:basis})]);
+    await pool.query(`UPDATE problems SET max_points=7.5,current_problem_version_id=$2,
+      selection_metadata=$3::jsonb WHERE stable_key=$1`, [stableKey, version.version_id, JSON.stringify({ scoreBasis: basis })]);
+    const sealed = encryptedKey(stableKey, { answer: "요건을 충족한다.", rubric: "요건과 결론을 확인한다.",
+      scoreBasisApproval: { problemVersionId: version.version_id, promptDigest: version.prompt_digest,
+        evidenceDigest: basis.evidenceDigest, scoreBasisDigest: p2ScoreBasisDigest(basis) } }, "v3-allocation");
+    await pool.query("UPDATE private_grading_keys SET active_for_grading=false WHERE stable_key=$1", [stableKey]);
+    await pool.query(`INSERT INTO private_grading_keys(subject_id,stable_key,key_version,
+      encrypted_payload,payload_digest,encryption_key_id,verification_state,active_for_grading)
+      VALUES('CIVIL',$1,'v3-allocation',$2,$3,$4,'verified',true)`, [stableKey,sealed.encrypted,sealed.payloadDigest,keyId]);
+  }
+  const allocatedContext = { ownerId: "synthetic-allocated" };
+  const allocatedSet = await execute("issueCivilP2", { requestId: "allocation",
+    mode: "문제지정", specificKeys: [p2Keys[0]] }, allocatedContext);
+  assert.ok(allocatedSet.questions.every(q => q.maxPoints === 7.5 && q.scoreBasis.learningMaximum === 7.5 && !Object.hasOwn(q.scoreBasis,"officialMaximum")));
+  const allocatedPrepared = await execute("prepareCivilP2Grade", { setId: allocatedSet.setId, answers }, allocatedContext);
+  assert.ok(allocatedPrepared.rubrics.every(q => q.scoreBasis.originalGroupMaximum === 15));
+  const allocatedEvaluations = evaluations.map(e => ({ ...e, maxPoints: 7.5 }));
+  // Immutable metadata and caller maxima both reject tampering in the real database.
+  await assert.rejects(pool.query(`UPDATE problem_versions SET selection_metadata=jsonb_set(selection_metadata,
+    '{scoreBasis,allocationPolicy}','"unapproved"') WHERE version_id IN
+    (SELECT problem_version_id FROM issue_set_items WHERE set_id=$1)`, [allocatedSet.setId]), /append-only/);
+  await assert.rejects(execute("commitCivilP2Grade", { setId: allocatedSet.setId,
+    evaluations: allocatedEvaluations.map(e=>({...e,maxPoints:15})) }, allocatedContext), /maxPoints mismatch/);
+  assert.equal((await pool.query(`SELECT count(*)::int AS n FROM p2_grades g JOIN submissions s
+    ON s.submission_id=g.submission_id WHERE s.set_id=$1`,[allocatedSet.setId])).rows[0].n,0);
+  const allocatedGrade = await execute("commitCivilP2Grade", { setId: allocatedSet.setId,
+    evaluations: allocatedEvaluations }, allocatedContext);
+  assert.deepEqual(allocatedGrade.summaries.map(g => g.awardedPoints), [7.5,0]);
+  assert.equal((await execute("commitCivilP2Grade", { setId: allocatedSet.setId,
+    evaluations: allocatedEvaluations }, allocatedContext)).replayed,true);
+  const allocatedStored = await pool.query(`SELECT g.evaluation_payload FROM p2_grades g JOIN submissions s
+    ON s.submission_id=g.submission_id WHERE s.set_id=$1`,[allocatedSet.setId]);
+  assert.ok(allocatedStored.rows.every(r=>r.evaluation_payload.aiScore.learningMaximum===7.5 &&
+    !Object.hasOwn(r.evaluation_payload.aiScore,"officialMaximum")));
+  const preserved = await execute("commitCivilP2Grade", { setId: oldSet.setId, evaluations }, oldContext);
+  assert.deepEqual(preserved.summaries.map(g=>[g.maxPoints,g.awardedPoints]),[[15,15],[15,0]]);
+  process.stdout.write(JSON.stringify({ ok: true, p1Issued: 2, p1Correct: 2,
+    p2CaseItems: 2, p2LearningScores: [15, 0], originalAnswers: 3,
+    p2Grades: 2, replayed: true, ownerDenied: true, changedAnswerDenied: true,
+    unsubmittedSubquestionHasNoReviewAttempt: true,
+    concurrentDifferentRequestsHaveDisjointActiveProblems: true,
+    strictFixedCriteriaCommitPassed: true, strictLegacyPendingRejected: true, strictLegacyReplayPreserved: true,
+    fixedCriteriaDenominatorEnforced: true, callerManifestIgnored: true,
+    allocatedScoreIssuePrepareCommitReplay: true, allocatedTamperRejectedWithoutGrade: true,
+    allocatedOfficialMaximumAbsent: true, historicalScoreMaximumPreserved: true,
+    previousKeySnapshotPreserved: true, fixedCriteriaReplayPassed: true, fixedDecisionRulesReturned: true,
+    syntheticLocalLatency: Object.fromEntries(Object.entries(timings)
+      .map(([name, values]) => [name, summary(values)])) }) + "\n");
+} finally {
+  await pool.end();
+}

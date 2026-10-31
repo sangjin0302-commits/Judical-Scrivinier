@@ -1,0 +1,15 @@
+# Optional complete-case publication gate
+
+`validateP2CompleteCaseEvidence` is an optional maintenance gate used by the fixed-criteria publisher when complete-case evidence is supplied. It changes no legacy publication or replay behavior when the new fields are absent. It is not a global requirement until the trusted maintenance entry point requires it for new publications.
+
+Before enabling new publication, the caller must construct `expected` independently from the authoritative complete-case inventory, approved independent audit artifact, and actual model-run receipt registry. Never populate expected values by copying the candidate evidence. The complete inventory includes every subquestion, including unchanged ones, and the common-facts digest. Each item binds its problem version, prompt, source, and proposed criteria.
+
+The audit must affirm complete-case review, use an approved reviewer distinct from the generator, and report zero ambiguities, omitted meanings, unsupported elements, and duplicates. The model benchmark must bind that same scope and independently approved test suite; every receipt must match the trusted run registry, include request/response/result hashes, and report an actual successful invocation. No source or learner answer text belongs in this contract.
+
+An actualInvocation boolean or matching hash is not proof by itself. The caller must verify the receipt producer and inspect the independent audit. This helper cannot establish legal correctness, detect reviewers sharing the same reasoning, or validate the semantic quality of a test suite. Synthetic unit fixtures are contract tests, not real-model acceptance evidence.
+
+Supply `input.caseValidationEvidence` and independently assembled `input.caseValidationScope` together, with `approvalEvidence.caseValidationDigest` equal to the helper's evidenceDigest. Evidence and expected scope include subjectId. Set reviewEvidenceDigest to the canonical digest of the existing reviewEvidence plus caseValidationEvidence. The publisher validates the current item's subject/key/version/prompt/original-payload/criteria/decision bindings, preserves the complete evidence in encrypted reviewEvidence, and stores its digest in encrypted approval. Partial optional inputs fail before DB access. The runtime's existing encrypted review digest binding remains compatible. Real PostgreSQL activation and real-model acceptance for this optional path remain outstanding; unit tests use a synthetic database facade.
+
+Bindings also require `decisionRubricDigest`, so changing decision conditions invalidates prior evidence. Each run receipt requires coverage counts for `full`, `equivalent`, `partial`, `wrong`, and `abstain`. Full and equivalent answers require at least three executions each; the other categories require at least one each. The counts must sum to testCount. The trusted suite/receipt producer must verify these categories and coverage across the complete case; declared counts alone do not prove that coverage.
+
+Targeted test: `node --test test/p2-complete-case-evidence.test.mjs`.
